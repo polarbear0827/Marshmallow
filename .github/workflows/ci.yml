@@ -1,0 +1,27 @@
+name: CI
+
+# Checks that every push to main (and every PR) still builds the app.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # build-app.sh uses the commit count as the build number
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Build app bundle
+        run: scripts/build-app.sh "$(cat VERSION)"

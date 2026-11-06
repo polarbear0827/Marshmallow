@@ -1,0 +1,91 @@
+name: Release
+
+# Pushing a tag like v0.4.0 builds the app on GitHub's machines, publishes the
+# DMG + ZIP with SHA-256 checksums, and attaches a signed build-provenance
+# attestation so anyone can check the files came from this repository.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write       # create the release
+  id-token: write       # sign the attestation
+  attestations: write   # store the attestation
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Build app
+        run: scripts/build-app.sh "$VERSION"
+
+      - name: Build DMG
+        run: scripts/make-dmg.sh "$VERSION"
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          shasum -a 256 "Marshmallow-$VERSION.dmg" "Marshmallow-$VERSION.zip" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/Marshmallow-${{ env.VERSION }}.dmg
+            dist/Marshmallow-${{ env.VERSION }}.zip
+
+      - name: Release notes
+        run: |
+          NOTES_FILE=".github/release-notes/v$VERSION.md"
+          {
+            if [ -f "$NOTES_FILE" ]; then cat "$NOTES_FILE"; else echo "## Marshmallow v$VERSION"; fi
+            cat <<EOF
+
+          ---
+          ### 📥 安裝
+          1. 下載下面的 **\`Marshmallow-$VERSION.dmg\`**，打開後把 **Marshmallow** 拖進「應用程式」資料夾。
+          2. 第一次打開如果出現「無法確認開發者」，到「**系統設定 → 隱私權與安全性**」最下面按「**仍要打開**」。
+          3. 打開後跟著新手教學練習一次就會了。
+
+          使用說明請看 [README](https://github.com/${GITHUB_REPOSITORY}#readme)。
+
+          ### 🔒 確認下載的是正版
+          這個版本是由 GitHub 自動從原始碼建置的，下面是每個檔案的 SHA-256 檢查碼：
+
+          \`\`\`
+          $(cat dist/SHA256SUMS.txt)
+          \`\`\`
+
+          在「終端機」輸入下面的指令（把檔名換成你下載的檔案），算出來的數字跟上面一樣就是正版：
+
+          \`\`\`
+          shasum -a 256 Marshmallow-$VERSION.dmg
+          \`\`\`
+
+          進階：用 GitHub CLI 驗證建置來源證明（確認檔案是從這個 repo 的原始碼建置出來的）：
+
+          \`\`\`
+          gh attestation verify Marshmallow-$VERSION.dmg --repo ${GITHUB_REPOSITORY}
+          \`\`\`
+          EOF
+          } > dist/RELEASE_NOTES.md
+          cat dist/RELEASE_NOTES.md
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/Marshmallow-$VERSION.dmg" \
+            "dist/Marshmallow-$VERSION.zip" \
+            "dist/SHA256SUMS.txt" \
+            --title "Marshmallow v$VERSION" \
+            --notes-file dist/RELEASE_NOTES.md

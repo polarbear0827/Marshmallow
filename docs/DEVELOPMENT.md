@@ -23,11 +23,24 @@ swift build
 MM_NO_IWORK=1 .build/debug/Marshmallow --run convert convert.pdf report.docx  # 強制使用內建轉換器
 ```
 
-發布新版本：
+發布新版本（由 GitHub Actions 建置並發布）：
 
 ```bash
-scripts/release.sh 0.3.0 "更新內容…"
+scripts/release.sh 0.4.0 "## Marshmallow v0.4.0
+- 更新內容…"
 ```
+
+這個指令只會：寫入 `.github/release-notes/v<版本>.md`、更新 `VERSION`、提交、打上 `v<版本>` 標籤並推送。
+推送標籤後，[`.github/workflows/release.yml`](../.github/workflows/release.yml) 會在 GitHub 的 macOS 主機上：
+
+1. 用 `scripts/build-app.sh` 和 `scripts/make-dmg.sh` 建置 DMG 和 ZIP
+2. 產生 `SHA256SUMS.txt`
+3. 用 `actions/attest-build-provenance` 簽發建置來源證明（可用 `gh attestation verify` 驗證）
+4. 建立 GitHub Release，附上 DMG、ZIP、SHA256SUMS.txt，說明裡含安裝步驟與檢查碼
+
+每次推送到 `main`，[`.github/workflows/ci.yml`](../.github/workflows/ci.yml) 也會自動編譯一次，確認沒有壞掉。
+
+如果 GitHub Actions 出問題，可以改用本機發布的備用腳本：`scripts/release-local.sh <版本> "<說明>"`。
 
 ## 運作原理
 

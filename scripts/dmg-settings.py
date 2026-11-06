@@ -12,7 +12,7 @@ files = [app]
 symlinks = {"Applications": "/Applications"}
 hide_extension = [appname]
 
-background = defines.get("background", "build/dmgbg/background.png")  # noqa: F821
+background = defines.get("background", "Resources/dmg/background.png")  # noqa: F821
 show_status_bar = False
 show_tab_view = False
 show_toolbar = False

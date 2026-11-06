@@ -15,12 +15,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"  # app.noindex: keep dev builds out of Spotlight
 cp "$BIN" "$APP/Contents/MacOS/Marshmallow"
 
-if [ ! -f build/AppIcon.icns ]; then
-  echo "▸ Rendering icon"
-  swift scripts/make-icon.swift build/AppIcon.iconset
-  iconutil -c icns build/AppIcon.iconset -o build/AppIcon.icns
-fi
-cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# The icon is committed (Resources/AppIcon.icns) so CI builds are reproducible.
+# To redraw it: swift scripts/make-icon.swift build/AppIcon.iconset && iconutil -c icns build/AppIcon.iconset -o Resources/AppIcon.icns
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
