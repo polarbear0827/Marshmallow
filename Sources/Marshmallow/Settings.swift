@@ -85,6 +85,7 @@ final class Settings: ObservableObject {
             "revealAfter": false,
             "hideDelay": 4.0,
             "didOnboard": false,
+            "showOnboarding": true,
         ])
     }
 
@@ -120,6 +121,10 @@ final class Settings: ObservableObject {
     }
     @Published var ffmpegPath: String = UserDefaults.standard.string(forKey: "ffmpegPath") ?? "" {
         didSet { d.set(ffmpegPath, forKey: "ffmpegPath"); ToolLocator.reset() }
+    }
+    /// Show the tutorial at launch until the user ticks「不再顯示」.
+    @Published var showOnboarding: Bool = UserDefaults.standard.bool(forKey: "showOnboarding") {
+        didSet { d.set(showOnboarding, forKey: "showOnboarding") }
     }
     var didOnboard: Bool {
         get { d.bool(forKey: "didOnboard") }

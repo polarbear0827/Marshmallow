@@ -1,88 +1,94 @@
-<p align="center"><img src="docs/icon.png" width="128" alt="Marshmallow icon"></p>
+<p align="center"><img src="docs/icon.png" width="120" alt="Marshmallow"></p>
 
 <h1 align="center">Marshmallow 棉花糖</h1>
 
-<p align="center">拖曳檔案時按住修飾鍵，就會跳出一個轉檔輪盤。把檔案丟到想要的格式上，就轉好了。<br>
-macOS 原生、全部在本機處理、免費開源。</p>
+<p align="center"><b>拖著檔案、按一個鍵，就能轉檔。</b><br>
+免費、開源、所有處理都在你的 Mac 上完成，檔案不會上傳到任何地方。</p>
+
+<p align="center"><img src="docs/demo-convert.gif" width="600" alt="按住 Shift 拖曳檔案，選 JPG 就轉好了"></p>
 
 ---
 
-## 怎麼用
+## 📥 下載與安裝
 
-1. 在 Finder（或任何 App）裡開始**拖曳**一個或多個檔案。
-2. 拖曳中按住快捷鍵，輪盤會以拖曳起點為中心出現。中央是透明的，可以看到原本的檔案：
+1. 到 **[Releases 下載頁](https://github.com/polarbear0827/Marshmallow/releases/latest)**，下載 `Marshmallow-x.x.x.zip`。
+2. 打開 zip，把 **Marshmallow** 拖進「**應用程式**」資料夾。
+3. 打開 Marshmallow。第一次開啟時，macOS 可能會說「無法確認開發者」：
+   - 打開「**系統設定 → 隱私權與安全性**」，捲到最下面，按「**仍要打開**」。
+4. 打開後會出現**新手教學**，跟著練習一遍就會了（大約 1 分鐘）。
 
-| 快捷鍵（預設，與 Tangerine 相同） | 輪盤 | 內容 |
-|---|---|---|
-| ⇧ Shift | **轉檔** | 依檔案類型列出可轉換的格式 |
-| ⌘ Command | **工具** | 壓縮、移除中繼資料、編輯、標註、加背景、裁切、遮蔽、剪輯、合併… |
-| ⌃ Control | **動作** | AirDrop、浮動視窗、拷貝路徑、終端機、拷貝、ZIP、訊息、郵件 |
+開好之後，Marshmallow 會待在螢幕右上角的**選單列**（一個棉花糖圖示），不會出現在 Dock。
 
-3. 移到想要的格子上**放開滑鼠**。輸出檔預設存在原檔旁邊，中央會顯示結果，也可以直接把結果拖出去。
-4. 放在中央或輪盤外放開就是取消。**原始檔案永遠不會被搬移或修改**，即使按著 ⌘ 也一樣。
+---
 
-> 快捷鍵、輸出位置、品質都可以在選單列圖示的「設定…」裡修改。
+## 🖱️ 怎麼用
 
-## 支援格式
+用法只有一個：**先開始拖曳檔案，拖曳中再按住一個按鍵**，輪盤就會跳出來。移到想要的格子上、**放開滑鼠**就完成了。
 
-| 類型 | 轉檔 | 工具（⌘） |
-|---|---|---|
-| 圖片 | JPG、PNG、WEBP\*、HEIC、TIFF、AVIF、BMP、PDF、DOCX、GIF、ICO、ICNS | 壓縮、移除中繼資料、**編輯**（曝光／對比／飽和度／色溫／銳利度／旋轉／縮放）、**標註**（畫筆、螢光筆、方框、圓、箭頭、文字）、**加背景**（漸層、留白、圓角、陰影、自動去背）、**裁切**（自由或固定比例）、**遮蔽**（馬賽克／黑條／模糊，可自動偵測臉孔與文字） |
-| 影片 | MP4、MOV、WEBM\*、GIF、HEVC、MKV\*、MP3\*、M4A、WAV | 壓縮、移除中繼資料、**剪輯**、靜音、取出音訊、擷取畫面、720p、旋轉\* |
-| 音訊 | MP3\*、M4A、WAV、FLAC\*、AIFF、OGG\*、OPUS\*、CAF | 壓縮、移除中繼資料、**剪輯**、音量標準化\*、去除靜音\*、單聲道\*、2 倍速\*、反轉\* |
-| PDF | PNG、JPG、DOCX、PPTX†、TXT、EPUB、HTML、RTF | 壓縮、移除中繼資料、旋轉、拆頁、反轉頁序、擷取文字、灰階；多個檔案可**合併** |
-| Word／文件（DOCX、DOC、Pages、RTF、ODT、TXT、MD、HTML） | PDF、DOCX、Pages†、EPUB、RTF、TXT、HTML、MD | 純文字、轉 PDF、字數統計 |
-| Excel／試算表（XLSX、XLS、CSV、TSV、Numbers、ODS） | XLSX、PDF、CSV、Numbers†、HTML、JSON、TSV、MD | — |
-| PowerPoint／簡報（PPTX、PPT、Key、ODP） | PDF、PPTX、Key、PNG、JPG、MP4、HTML（需要 Keynote） | — |
-| EPUB | PDF、DOCX、TXT、HTML、RTF、MD、Pages†、ODT | — |
+### ⇧ Shift ＋ 拖曳 → 轉檔
 
-\* 需要 [Homebrew](https://brew.sh)：`brew install ffmpeg webp`。
-† 需要 Pages／Numbers／Keynote（App Store 免費）。Word、Excel、PowerPoint 檔有安裝 iWork 時會透過 iWork 轉換，排版最準確；第一次使用時 macOS 會詢問是否允許 Marshmallow 控制這些 App。沒有安裝時會改用內建的轉換器。
+把圖片、影片、音樂、PDF、Word、Excel、PowerPoint 換成別的格式。轉好的檔案會放在原檔旁邊。
 
-## 安裝
+<img src="docs/demo-convert.gif" width="480" alt="轉檔示範">
 
-從 [Releases](../../releases) 下載最新的 `Marshmallow-x.y.z.zip`，解壓縮後拖進「應用程式」。
+### ⌘ Command ＋ 拖曳 → 工具
 
-App 沒有經過 Apple 公證，第一次開啟請在 App 上按右鍵 →「打開」，或執行：
+壓縮檔案大小、移除照片的位置等隱私資訊、裁切、標註、遮蔽臉和文字、加背景、剪輯影片……
 
-```bash
-xattr -dr com.apple.quarantine /Applications/Marshmallow.app
+<img src="docs/demo-tools.gif" width="480" alt="工具示範">
+
+### ⌃ Control ＋ 拖曳 → 動作
+
+AirDrop、放到浮動視窗暫存、拷貝檔案路徑、壓縮成 ZIP、用訊息或郵件傳送……
+
+<img src="docs/demo-actions.gif" width="480" alt="動作示範">
+
+### 小提醒
+
+- 💡 **一定要先拖、再按鍵。** 尤其是 ⌃ Control：如果先按著 Control 再點，會變成右鍵選單。
+- ↩️ **想取消？** 在輪盤中間或輪盤外面放開就好。
+- 🛡️ **原始檔案不會被改動或搬走**，新的檔案會另外存一份。
+- ⚙️ 想改按鍵、改存檔位置，點選單列的棉花糖圖示 →「**設定…**」。想再看一次教學，選「**新手教學…**」。
+
+---
+
+## 📄 可以轉哪些檔案？
+
+| 你的檔案 | 可以轉成 |
+|---|---|
+| 🖼️ 圖片（JPG、PNG、HEIC、WebP…） | JPG、PNG、WebP、HEIC、AVIF、TIFF、BMP、PDF、Word |
+| 🎬 影片（MP4、MOV…） | MP4、MOV、GIF、HEVC、只留聲音（MP3、M4A、WAV）、WEBM |
+| 🎵 音樂（MP3、WAV、M4A…） | MP3、M4A、WAV、FLAC、AIFF、OGG |
+| 📕 PDF | 圖片（PNG、JPG）、Word、PowerPoint、純文字、電子書 |
+| 📝 Word／Pages／文字檔 | PDF、Word、Pages、電子書（EPUB）、純文字、網頁 |
+| 📊 Excel／Numbers／CSV | Excel、PDF、CSV、Numbers、網頁 |
+| 📽️ PowerPoint／Keynote | PDF、PowerPoint、Keynote、每頁存成圖片、影片 |
+| 📚 電子書（EPUB） | PDF、Word、純文字、網頁 |
+
+---
+
+## ❓ 常見問題
+
+**拖曳時按了鍵，輪盤沒有出現？**
+確認選單列有棉花糖圖示，代表 Marshmallow 正在執行。也要確認是「先開始拖、再按鍵」。
+
+**Word、Excel、PowerPoint 怎麼轉比較漂亮？**
+如果 Mac 上有 **Pages、Numbers、Keynote**（App Store 免費下載），Marshmallow 會透過它們轉換，排版最準確。PowerPoint 檔一定要有 Keynote；Word 和 Excel 沒有也能轉，只是排版比較陽春。
+第一次轉換時 macOS 會問「是否允許 Marshmallow 控制 Pages」，請按「好」。如果不小心按了拒絕，可以到「系統設定 → 隱私權與安全性 → 自動化」重新打開。
+
+**為什麼有些格式（WEBM、MP3、FLAC）沒有出現在輪盤上？**
+這些格式需要額外安裝免費工具。如果你會用終端機，可以安裝 [Homebrew](https://brew.sh) 後執行：
 ```
-
-需求：macOS 14 以上（macOS 26 以上會使用 Liquid Glass 外觀）。不需要「輔助使用」權限。
-
-## 從原始碼建置
-
-```bash
-scripts/build-app.sh          # 產生 build/Marshmallow.app 與 dist/Marshmallow-<版本>.zip
+brew install ffmpeg webp
 ```
+裝好之後輪盤就會出現這些格式。不裝也沒關係，常用的格式都能用。
 
-開發用的隱藏指令：
+**需要什麼 macOS 版本？**
+macOS 14 Sonoma 以上。macOS 26 以上會有半透明的「液態玻璃」外觀。
 
-```bash
-swift build
-.build/debug/Marshmallow --list photo.jpg                       # 列出各輪盤的項目
-.build/debug/Marshmallow --run convert convert.webp photo.jpg  # 不開 UI 直接執行某個項目
-.build/debug/Marshmallow --demo tools 2 photo.jpg              # 在螢幕中央顯示輪盤（第 2 格 hover）
-.build/debug/Marshmallow --selftest 0 85 photo.jpg             # 不用滑鼠模擬「移到某格再放開」
-.build/debug/Marshmallow --editor-test crop photo.jpg          # 在螢幕外開啟編輯器並儲存
-MM_NO_IWORK=1 .build/debug/Marshmallow --run convert convert.pdf report.docx  # 強制使用內建轉換器
-```
+**會不會把我的檔案傳到網路上？**
+不會。所有轉檔都在你的 Mac 上完成，Marshmallow 不會連網。
 
-發布新版本：
+---
 
-```bash
-scripts/release.sh 0.2.0 "更新內容…"
-```
-
-## 運作原理
-
-- **偵測拖曳**：每秒輪詢 60 次滑鼠按鍵狀態。按下期間如果拖曳剪貼簿（`NSPasteboard(name: .drag)`）的 changeCount 改變，就代表有檔案拖曳開始；修飾鍵用 `NSEvent.modifierFlags` 讀取，所以不需要輔助使用權限。
-- **接住放置**：macOS 只會把拖曳交給「拖曳開始時已經在螢幕上」的視窗。所以滑鼠一按下，Marshmallow 就在按下的位置放一個完全透明、點擊可穿透的面板。之後真的開始拖曳並按下快捷鍵時，輪盤就在同一個位置顯示，並接住放置，檔案不會掉到底下的視窗。輪盤只接受「拷貝」操作；按著 ⌘（搬移）或 ⌃（替身）時會拒絕放置，讓檔案滑回原位，再由「放開滑鼠」的偵測執行你選的項目，所以原檔永遠不會被搬動。
-- **轉檔**：圖片用 ImageIO，影音用 ffmpeg 或 AVFoundation，文件用 NSAttributedString 和 PDFKit，Office 檔用 Pages／Numbers／Keynote 的 AppleScript（也有內建的 XLSX／CSV／EPUB／DOCX 讀寫器），去背和遮蔽用 Vision。
-
-Marshmallow 是獨立撰寫的開源專案，受到拖曳轉檔類工具的操作方式啟發，沒有使用其他產品的程式碼或素材。
-
-## 授權
-
-[MIT](LICENSE)
+<p align="center">MIT 授權・免費開源・想參與開發請看 <a href="docs/DEVELOPMENT.md">開發者說明</a></p>

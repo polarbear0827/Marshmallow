@@ -318,17 +318,24 @@ final class WheelController {
         isBusy = true
         cancelHide()
         model.phase = .working(item.title)
+        let mode = model.mode
         Task.detached(priority: .userInitiated) {
             let result: Result<ItemResult, Error>
             do { result = .success(try await item.run(files)) } catch { result = .failure(error) }
-            await MainActor.run { self.finish(result) }
+            await MainActor.run { self.finish(result, mode: mode, item: item) }
         }
     }
 
     @MainActor
-    private func finish(_ result: Result<ItemResult, Error>) {
+    private func finish(_ result: Result<ItemResult, Error>, mode: WheelMode, item: WheelItem) {
         isBusy = false
         let settings = Settings.shared
+        var ok = true
+        if case .failure = result { ok = false }
+        // Lets the onboarding practice pages know what the user just did.
+        NotificationCenter.default.post(name: .wheelItemFinished, object: nil, userInfo: [
+            "mode": mode.rawValue, "title": item.title, "success": ok,
+        ])
         switch result {
         case .success(.files(let urls)):
             model.results = urls
@@ -352,4 +359,9 @@ final class WheelController {
             scheduleHide(after: max(settings.hideDelay, 5))
         }
     }
+}
+
+extension Notification.Name {
+    /// Posted after a wheel item runs. userInfo: mode (String), title (String), success (Bool).
+    static let wheelItemFinished = Notification.Name("MarshmallowWheelItemFinished")
 }

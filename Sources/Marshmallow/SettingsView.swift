@@ -22,6 +22,8 @@ struct SettingsView: View {
 
             Section("一般") {
                 Toggle("啟用拖曳輪盤", isOn: $s.enabled)
+                Toggle("啟動時顯示新手教學", isOn: $s.showOnboarding)
+                Button("打開新手教學…") { OnboardingWindow.show() }
                 Toggle("登入時自動啟動", isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) { _, v in s.launchAtLogin = v }
                 Toggle("完成時播放音效", isOn: $s.playSound)

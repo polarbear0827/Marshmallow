@@ -26,9 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         monitor.onClick = { [weak self] p in self?.wheel.handleClick(at: p) }
         monitor.start()
 
-        if !Settings.shared.didOnboard {
+        // Tutorial on every launch until「不再顯示新手教學」is ticked.
+        if Settings.shared.showOnboarding {
             Settings.shared.didOnboard = true
-            openSettings()
+            OnboardingWindow.show()
         }
     }
 
@@ -60,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        menu.addItem(withTitle: "新手教學…", action: #selector(openOnboarding), keyEquivalent: "").target = self
         menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "GitHub 專案頁面", action: #selector(openGitHub), keyEquivalent: "").target = self
         menu.addItem(.separator())
@@ -72,6 +74,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Settings.shared.enabled.toggle()
         rebuildMenu()
     }
+
+    @objc private func openOnboarding() { OnboardingWindow.show() }
 
     @objc private func openGitHub() {
         NSWorkspace.shared.open(URL(string: "https://github.com/polarbear0827/Marshmallow")!)
@@ -196,6 +200,20 @@ enum MarshmallowMain {
                 } catch { print("ERROR \(error)"); exit(1) }
             }
             app.run()
+            return
+        }
+        // Onboarding check: Marshmallow --onboarding-test <step>  (off-screen, prints window number)
+        if args.count >= 3, args[1] == "--onboarding-test", let step = Int(args[2]) {
+            setvbuf(stdout, nil, _IONBF, 0)
+            app.setActivationPolicy(.accessory)
+            let w = OnboardingWindow()
+            w.model.step = step
+            if args.count >= 4 { w.model.done[.convert] = "PDF" }
+            w.window.setFrameOrigin(NSPoint(x: -6000, y: -6000))
+            w.window.orderFrontRegardless()
+            print("WINDOW \(w.window.windowNumber)")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { exit(0) }
+            withExtendedLifetime(w) { app.run() }
             return
         }
         if args.count >= 3, args[1] == "--list" {

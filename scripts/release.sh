@@ -20,11 +20,12 @@ git push -q origin "v$VERSION"
 INSTALL=$(cat <<EOF
 
 ---
-### 安裝
-1. 下載 \`Marshmallow-$VERSION.zip\`，解壓縮後把 **Marshmallow.app** 拖進「應用程式」。
-2. App 沒有經過 Apple 公證，第一次開啟請在 App 上按右鍵 →「打開」，或執行：
-   \`xattr -dr com.apple.quarantine /Applications/Marshmallow.app\`
-3. 選用：\`brew install ffmpeg webp\` 可解鎖 WEBM / MP3 / FLAC / OGG 等格式。
+### 📥 安裝
+1. 下載下面的 \`Marshmallow-$VERSION.zip\`，打開後把 **Marshmallow** 拖進「應用程式」。
+2. 第一次打開如果出現「無法確認開發者」，到「**系統設定 → 隱私權與安全性**」最下面按「**仍要打開**」。
+3. 打開後跟著新手教學練習一次就會了。
+
+使用說明請看 [README](https://github.com/polarbear0827/Marshmallow#readme)。
 EOF
 )
 
