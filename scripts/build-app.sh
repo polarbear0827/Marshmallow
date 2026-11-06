@@ -39,13 +39,21 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSAppleEventsUsageDescription</key><string>Marshmallow 透過 Pages、Numbers、Keynote 轉換 Word、Excel、PowerPoint 檔案。</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 polarbear0827. MIT License.</string>
 </dict>
 </plist>
 PLIST
 
 echo "▸ Signing (ad-hoc)"
-codesign --force --deep --options runtime --sign - "$APP"
+cat > build/entitlements.plist <<ENT
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>com.apple.security.automation.apple-events</key><true/>
+</dict></plist>
+ENT
+codesign --force --deep --options runtime --entitlements build/entitlements.plist --sign - "$APP"
 
 mkdir -p dist
 ZIP="dist/Marshmallow-$VERSION.zip"

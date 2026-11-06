@@ -4,20 +4,24 @@ import UniformTypeIdentifiers
 // MARK: - File classification
 
 enum FileKind: String {
-    case image, video, audio, pdf, document, other
+    case image, video, audio, pdf, document, spreadsheet, presentation, ebook, other
 
     static func of(_ url: URL) -> FileKind {
         let ext = url.pathExtension.lowercased()
-        if ["md", "markdown"].contains(ext) { return .document }
+        switch ext {
+        case "md", "markdown", "pages", "doc", "docx", "rtf", "rtfd", "odt", "txt", "text", "html", "htm", "webarchive", "wordml":
+            return .document
+        case "xlsx", "xls", "csv", "tsv", "numbers", "ods": return .spreadsheet
+        case "pptx", "ppt", "key", "odp": return .presentation
+        case "epub": return .ebook
+        default: break
+        }
         guard let type = UTType(filenameExtension: ext) else { return .other }
         if type.conforms(to: .pdf) { return .pdf }
         if type.conforms(to: .image) || ext == "svg" { return .image }
         if type.conforms(to: .movie) || type.conforms(to: .video) { return .video }
         if type.conforms(to: .audio) { return .audio }
-        let docExts = ["doc", "docx", "rtf", "rtfd", "odt", "txt", "text", "html", "htm", "webarchive", "wordml"]
-        if docExts.contains(ext) || type.conforms(to: .rtf) || type.conforms(to: .plainText) || type.conforms(to: .html) {
-            return .document
-        }
+        if type.conforms(to: .rtf) || type.conforms(to: .plainText) || type.conforms(to: .html) { return .document }
         return .other
     }
 

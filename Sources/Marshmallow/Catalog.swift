@@ -76,13 +76,34 @@ enum Catalog {
                 .filter { ToolLocator.hasFFmpeg || MediaEngine.nativeTargets.contains($0) }
                 .map { t in fmt(t) { try await MediaEngine.convert($0, to: t) } }
         case .pdf:
-            return ["png", "jpg", "docx", "txt", "rtf", "html", "heic", "tiff"].map { t in
-                fmt(t) { u in try await MainActor.run { try DocumentEngine.convert(u, to: t) } }
-            }
+            let keynote = IWork.App.keynote.isInstalled
+            return ["png", "jpg", "docx", "pptx", "txt", "epub", "html", "rtf", "tiff"]
+                .filter { $0 != "pptx" || keynote }
+                .prefix(8)
+                .map { t in fmt(t) { u in try await OfficeEngine.convertDocument(u, to: t) } }
         case .document:
-            return ["pdf", "docx", "rtf", "txt", "html", "odt", "png", "md"].filter(notSame).map { t in
-                fmt(t) { u in try await MainActor.run { try DocumentEngine.convert(u, to: t) } }
-            }
+            let pages = IWork.App.pages.isInstalled
+            return ["pdf", "docx", "pages", "epub", "rtf", "txt", "html", "md", "odt"]
+                .filter(notSame)
+                .filter { $0 != "pages" || pages }
+                .prefix(8)
+                .map { t in fmt(t) { u in try await OfficeEngine.convertDocument(u, to: t) } }
+        case .spreadsheet:
+            let numbers = IWork.App.numbers.isInstalled
+            return ["xlsx", "pdf", "csv", "numbers", "html", "json", "tsv", "md"]
+                .filter(notSame)
+                .filter { $0 != "numbers" || numbers }
+                .prefix(8)
+                .map { t in fmt(t) { u in try await OfficeEngine.convertSpreadsheet(u, to: t) } }
+        case .presentation:
+            guard IWork.App.keynote.isInstalled else { return [] }
+            return ["pdf", "pptx", "key", "png", "jpg", "mp4", "html"]
+                .filter(notSame)
+                .map { t in fmt(t) { u in try await OfficeEngine.convertPresentation(u, to: t) } }
+        case .ebook:
+            return ["pdf", "docx", "txt", "html", "rtf", "md", "pages", "odt"]
+                .filter { $0 != "pages" || IWork.App.pages.isInstalled }
+                .map { t in fmt(t) { u in try await OfficeEngine.convertDocument(u, to: t) } }
         case .other:
             return []
         }
@@ -189,7 +210,7 @@ enum Catalog {
                     return .message(msg)
                 },
             ]
-        case .other:
+        case .spreadsheet, .presentation, .ebook, .other:
             return []
         }
     }

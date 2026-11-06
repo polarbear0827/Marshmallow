@@ -56,12 +56,11 @@ final class DropView: NSView, NSDraggingSource {
         guard let c = controller, c.isVisible, c.model.phase == .choosing, !c.isDraggingOut else { return [] }
         let idx = WheelGeometry.segment(at: rel(sender.draggingLocation), count: c.model.items.count)
         c.setHover(idx)
-        // Accept (so nothing underneath gets the drop) but never ask the source to
-        // move: the original file is left untouched. ⌘ limits the mask to move/generic.
-        let mask = sender.draggingSourceOperationMask
-        if mask.contains(.copy) { return .copy }
-        if mask.contains(.generic) { return .generic }
-        return mask.contains(.link) ? .link : .copy
+        // Only ever accept a *copy*. With ⌘ (move) or ⌃ (link) held the source offers
+        // no copy, so we decline: the drag slides back and the original file can never
+        // be moved. Our own mouse-up tracking still runs the chosen item. Because the
+        // wheel is the topmost registered window, a declined drop doesn't fall through.
+        return sender.draggingSourceOperationMask.contains(.copy) ? .copy : []
     }
 
     override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { true }
