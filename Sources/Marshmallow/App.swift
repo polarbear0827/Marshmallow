@@ -8,7 +8,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let wheel = WheelController()
     private var settingsWindow: NSWindow?
 
+    /// Keeps macOS from App-Napping us. Marshmallow has no visible windows most of
+    /// the time, and once napped its 60 Hz drag polling slows to a crawl, so the
+    /// wheel would appear late, never highlight and miss the mouse-up.
+    private var noNap: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ note: Notification) {
+        noNap = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+            reason: "Watching for file drags")
         setupStatusItem()
 
         monitor.onMouseDown = { [weak self] p in

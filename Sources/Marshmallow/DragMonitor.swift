@@ -26,6 +26,7 @@ final class DragMonitor {
     func start() {
         guard timer == nil else { return }
         let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
+        t.tolerance = 0          // no timer coalescing; drags need prompt updates
         RunLoop.main.add(t, forMode: .common)
         timer = t
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
