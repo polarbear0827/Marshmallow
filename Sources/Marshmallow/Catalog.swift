@@ -36,7 +36,18 @@ enum Catalog {
     private static func each(_ body: @escaping (URL) async throws -> URL) -> ([URL]) async throws -> ItemResult {
         { urls in
             var outs: [URL] = []
-            for u in urls { outs.append(try await body(u)) }
+            let job = JobContext.current
+            for (i, u) in urls.enumerated() {
+                try Task.checkCancellation()
+                if urls.count > 1 {
+                    // Each file gets an equal slice of the overall progress.
+                    let slice = JobContext { p in job?.report((Double(i) + p) / Double(urls.count)) }
+                    outs.append(try await JobContext.$current.withValue(slice) { try await body(u) })
+                    job?.report(Double(i + 1) / Double(urls.count))
+                } else {
+                    outs.append(try await body(u))
+                }
+            }
             return .files(outs)
         }
     }

@@ -188,7 +188,7 @@ enum MediaEngine {
     static func ff(_ input: URL, _ args: [String]) async throws {
         var a = args
         a.insert(contentsOf: await privacyArgs(input), at: max(0, a.count - 1))
-        try await Shell.ffmpeg(a)
+        try await Shell.ffmpeg(a, duration: try? await duration(input))
     }
 
     static func privacyArgs(_ input: URL) async -> [String] {
@@ -229,15 +229,29 @@ enum MediaEngine {
         session.metadataItemFilter = .forSharing()
         if stripMetadata || !Settings.shared.keepCaptureInfo { session.metadata = [] }
         session.shouldOptimizeForNetworkUse = true
-        if #available(macOS 15, *) {
-            try await session.export(to: out, as: type)
-        } else {
-            session.outputURL = out
-            session.outputFileType = type
-            await session.export()
-            if session.status != .completed {
-                throw session.error ?? MarshmallowError("轉檔失敗")
+        // Report progress to the current job while exporting; cancelling the task cancels the export.
+        let job = JobContext.current
+        let poll = Task.detached {
+            while !Task.isCancelled {
+                job?.report(Double(session.progress))
+                try? await Task.sleep(nanoseconds: 200_000_000)
             }
+        }
+        defer { poll.cancel() }
+        try await withTaskCancellationHandler {
+            if #available(macOS 15, *) {
+                try await session.export(to: out, as: type)
+            } else {
+                session.outputURL = out
+                session.outputFileType = type
+                await session.export()
+                if session.status == .cancelled { throw CancellationError() }
+                if session.status != .completed {
+                    throw session.error ?? MarshmallowError("轉檔失敗")
+                }
+            }
+        } onCancel: {
+            session.cancelExport()
         }
     }
 

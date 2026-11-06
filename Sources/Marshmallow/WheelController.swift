@@ -1,3 +1,4 @@
+import Combine
 import AppKit
 import SwiftUI
 
@@ -105,6 +106,10 @@ final class DropView: NSView, NSDraggingSource {
         guard let c = controller, mouseDownPoint != nil else { return }
         mouseDownPoint = nil
         let r = rel(event.locationInWindow)
+        if case .working = c.model.phase {
+            if hypot(r.x, r.y) <= WheelGeometry.centerRadius { c.cancelCurrentJob() }
+            return
+        }
         if hypot(r.x, r.y) <= WheelGeometry.centerRadius, !c.model.results.isEmpty {
             NSWorkspace.shared.activateFileViewerSelecting(c.model.results)
         }
@@ -311,31 +316,66 @@ final class WheelController {
 
     // MARK: Running items
 
+    /// The job the wheel is currently showing (if any).
+    private weak var currentJob: Job?
+    private var progressObserver: Any?
+
     func perform(index: Int, files: [URL]) {
         // Either the real drop or our own mouse-up tracking may arrive first; run once.
         guard model.phase == .choosing, !isBusy, model.items.indices.contains(index) else { return }
         let item = model.items[index]
         isBusy = true
         cancelHide()
+        model.progress = nil
         model.phase = .working(item.title)
         let mode = model.mode
-        Task.detached(priority: .userInitiated) {
-            let result: Result<ItemResult, Error>
-            do { result = .success(try await item.run(files)) } catch { result = .failure(error) }
-            await MainActor.run { self.finish(result, mode: mode, item: item) }
+        let job = JobCenter.shared.start(item, files: files) { [weak self] job, result in
+            guard let self else { return }
+            if job.attachedToWheel && self.currentJob === job {
+                self.finish(result, mode: mode, item: item)
+            } else {
+                // Finished in the background: tell the user with a notification.
+                JobCenter.shared.notify(job, result)
+                self.postFinished(result, mode: mode, item: item)
+            }
+        }
+        currentJob = job
+        progressObserver = job.$progress.sink { [weak self] p in self?.model.progress = p }
+
+        // Long jobs move to the background so the wheel is free again.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self, weak job] in
+            guard let self, let job, self.currentJob === job, case .working = self.model.phase else { return }
+            job.attachedToWheel = false
+            JobCenter.shared.requestNotificationPermission()
+            self.isBusy = false
+            self.currentJob = nil
+            self.model.phase = .done(title: "在背景處理中，完成會通知你", detail: "")
+            self.scheduleHide(after: 1.6)
         }
     }
 
-    @MainActor
-    private func finish(_ result: Result<ItemResult, Error>, mode: WheelMode, item: WheelItem) {
-        isBusy = false
-        let settings = Settings.shared
+    /// Clicking the wheel center while working cancels the job.
+    func cancelCurrentJob() {
+        guard let job = currentJob, case .working = model.phase else { return }
+        job.cancel()
+    }
+
+    private func postFinished(_ result: Result<ItemResult, Error>, mode: WheelMode, item: WheelItem) {
         var ok = true
         if case .failure = result { ok = false }
-        // Lets the onboarding practice pages know what the user just did.
         NotificationCenter.default.post(name: .wheelItemFinished, object: nil, userInfo: [
             "mode": mode.rawValue, "title": item.title, "success": ok,
         ])
+    }
+
+    /// Always called on the main thread (JobCenter delivers results there).
+    private func finish(_ result: Result<ItemResult, Error>, mode: WheelMode, item: WheelItem) {
+        isBusy = false
+        currentJob = nil
+        progressObserver = nil
+        let settings = Settings.shared
+        // Lets the onboarding practice pages know what the user just did.
+        postFinished(result, mode: mode, item: item)
         switch result {
         case .success(.files(let urls)):
             model.results = urls
@@ -353,6 +393,9 @@ final class WheelController {
             model.phase = .done(title: msg, detail: "")
             if settings.playSound { NSSound(named: "Pop")?.play() }
             scheduleHide(after: min(settings.hideDelay, 2))
+        case .failure(let error) where error is CancellationError:
+            model.phase = .done(title: "已取消", detail: "")
+            scheduleHide(after: 1.2)
         case .failure(let error):
             model.phase = .failed(error.localizedDescription)
             NSSound(named: "Basso")?.play()

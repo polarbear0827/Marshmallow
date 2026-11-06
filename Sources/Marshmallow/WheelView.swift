@@ -63,6 +63,7 @@ final class WheelModel: ObservableObject {
     @Published var phase: WheelPhase = .choosing
     @Published var thumbnail: NSImage?
     @Published var results: [URL] = []
+    @Published var progress: Double?
 
     var subtitle: String {
         guard let f = files.first else { return "" }
@@ -230,7 +231,7 @@ struct CenterView: View {
             case .choosing:
                 pill(model.subtitle)
             case .working:
-                ProgressView().controlSize(.small)
+                WorkingIndicator(progress: model.progress)
             case .done(_, let detail):
                 VStack(spacing: 3) {
                     Image(systemName: "checkmark.circle.fill")
@@ -287,5 +288,28 @@ struct CenterView: View {
                 .background(Capsule().fill(.ultraThinMaterial))
                 .overlay(Capsule().strokeBorder(.white.opacity(0.6), lineWidth: 0.6))
         }
+    }
+}
+
+/// Progress ring with percentage (spinner when progress is unknown).
+/// Clicking the wheel center cancels the job.
+struct WorkingIndicator: View {
+    let progress: Double?
+    var body: some View {
+        ZStack {
+            if let p = progress {
+                Circle().stroke(Color.white.opacity(0.35), lineWidth: 5)
+                Circle().trim(from: 0, to: p)
+                    .stroke(WheelView.accent, style: StrokeStyle(lineWidth: 5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(Int(p * 100))%")
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .frame(width: 62, height: 62)
+        .help("點一下取消")
     }
 }

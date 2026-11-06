@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Carbon.HIToolbox   // AEDeterminePermissionToAutomateTarget
+import UserNotifications
 
 // MARK: - Window
 
@@ -58,6 +59,7 @@ final class OnboardingModel: ObservableObject {
     @Published var automation: [IWork.App: AutomationState] = [:]
     @Published var launchAtLogin = Settings.shared.launchAtLogin
     @Published var dontShowAgain = !Settings.shared.showOnboarding
+    @Published var notificationsGranted = false
     let practiceFile: URL
     private var observer: Any?
 
@@ -67,6 +69,7 @@ final class OnboardingModel: ObservableObject {
             automation[app] = app.isInstalled ? .checking : .notInstalled
         }
         refreshAutomation()
+        refreshNotifications()
         observer = NotificationCenter.default.addObserver(forName: .wheelItemFinished, object: nil, queue: .main) { [weak self] note in
             guard let self, let raw = note.userInfo?["mode"] as? String, let mode = WheelMode(rawValue: raw),
                   note.userInfo?["success"] as? Bool == true else { return }
@@ -157,6 +160,17 @@ final class OnboardingModel: ObservableObject {
                 NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).forEach { $0.terminate() }
             }
             await MainActor.run { self.automation[app] = OnboardingModel.state(for: status) }
+        }
+    }
+
+    func requestNotifications() {
+        JobCenter.shared.requestNotificationPermission { [weak self] ok in self?.notificationsGranted = ok }
+    }
+
+    func refreshNotifications() {
+        guard Bundle.main.bundleURL.pathExtension == "app" else { return }
+        UNUserNotificationCenter.current().getNotificationSettings { s in
+            DispatchQueue.main.async { self.notificationsGranted = s.authorizationStatus == .authorized || s.authorizationStatus == .provisional }
         }
     }
 
@@ -342,6 +356,18 @@ struct PermissionsPage: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("轉檔完成通知", systemImage: "bell.badge").font(.headline)
+                        Spacer()
+                        if model.notificationsGranted {
+                            Label("已允許", systemImage: "checkmark.circle.fill").foregroundStyle(.green).font(.callout)
+                        } else {
+                            Button("允許通知") { model.requestNotifications() }
+                        }
+                    }
+                    Text("影片等比較久的轉檔會在背景進行，完成時用通知告訴你。")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Divider()
                     Toggle(isOn: $model.launchAtLogin) {
                         Label("登入 Mac 時自動啟動 Marshmallow", systemImage: "power").font(.headline)
                     }

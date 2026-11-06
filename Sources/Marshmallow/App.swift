@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -33,17 +34,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Ask before quitting while conversions are still running.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let n = JobCenter.shared.jobs.count
+        guard n > 0 else { return .terminateNow }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "還有 \(n) 個工作在處理中"
+        alert.informativeText = "現在結束會取消這些工作，做到一半的檔案會被刪除。"
+        alert.addButton(withTitle: "繼續處理")
+        alert.addButton(withTitle: "取消並結束")
+        if alert.runModal() == .alertSecondButtonReturn {
+            JobCenter.shared.cancelAll()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { NSApp.reply(toApplicationShouldTerminate: true) }
+            return .terminateLater
+        }
+        return .terminateCancel
+    }
+
     // MARK: Status item
 
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = Icons.menuBar()
+        statusItem.button?.imagePosition = .imageLeft
         statusItem.button?.toolTip = "Marshmallow"
-        rebuildMenu()
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
+        JobCenter.shared.onChange = { [weak self] in self?.updateStatusTitle() }
+        JobCenter.shared.setUpNotifications()
     }
 
-    private func rebuildMenu() {
-        let menu = NSMenu()
+    /// Shows overall progress next to the icon while jobs run.
+    private func updateStatusTitle() {
+        let center = JobCenter.shared
+        guard let button = statusItem.button else { return }
+        if center.jobs.isEmpty {
+            button.title = ""
+        } else {
+            let pct = center.overallProgress.map { " \(Int($0 * 100))%" } ?? " …"
+            let count = center.jobs.count > 1 ? " ×\(center.jobs.count)" : ""
+            button.title = pct + count
+        }
+        button.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    }
+
+    /// Rebuilt every time the menu opens, so labels and jobs are current.
+    private func fillMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
         let header = NSMenuItem(title: "Marshmallow \(Bundle.main.shortVersion)", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
@@ -60,20 +99,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.isEnabled = false
             menu.addItem(item)
         }
+        let jobs = JobCenter.shared.jobs
+        if !jobs.isEmpty {
+            menu.addItem(.separator())
+            let title = NSMenuItem(title: "處理中（點一下取消）", action: nil, keyEquivalent: "")
+            title.isEnabled = false
+            menu.addItem(title)
+            for job in jobs {
+                let pct = job.progress.map { "\(Int($0 * 100))%" } ?? "…"
+                let item = NSMenuItem(title: "✕  \(job.title) · \(job.subject) — \(pct)", action: #selector(cancelJob(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = job
+                menu.addItem(item)
+            }
+            if jobs.count > 1 {
+                menu.addItem(withTitle: "全部取消", action: #selector(cancelAllJobs), keyEquivalent: "").target = self
+            }
+        }
         menu.addItem(.separator())
         menu.addItem(withTitle: "新手教學…", action: #selector(openOnboarding), keyEquivalent: "").target = self
         menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: ",").target = self
         menu.addItem(withTitle: "GitHub 專案頁面", action: #selector(openGitHub), keyEquivalent: "").target = self
         menu.addItem(.separator())
         menu.addItem(withTitle: "結束 Marshmallow", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        menu.delegate = self
-        statusItem.menu = menu
     }
 
     @objc private func toggleEnabled() {
         Settings.shared.enabled.toggle()
-        rebuildMenu()
     }
+
+    @objc private func cancelJob(_ sender: NSMenuItem) { (sender.representedObject as? Job)?.cancel() }
+    @objc private func cancelAllJobs() { JobCenter.shared.cancelAll() }
 
     @objc private func openOnboarding() { OnboardingWindow.show() }
 
@@ -97,8 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSMenuDelegate {
-    // Rebuild after closing so labels reflect any settings changes.
-    func menuDidClose(_ menu: NSMenu) { rebuildMenu() }
+    func menuNeedsUpdate(_ menu: NSMenu) { fillMenu(menu) }
 }
 
 extension Bundle {
@@ -214,6 +269,40 @@ enum MarshmallowMain {
             print("WINDOW \(w.window.windowNumber)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { exit(0) }
             withExtendedLifetime(w) { app.run() }
+            return
+        }
+        // Background-job check: Marshmallow --jobtest <convert-target> <cancelAfterSeconds|0> <file>
+        if args.count >= 5, args[1] == "--jobtest" {
+            setvbuf(stdout, nil, _IONBF, 0)
+            app.setActivationPolicy(.prohibited)
+            let wheel = WheelController()
+            let file = URL(fileURLWithPath: args[4]); let target = args[2]; let cancelAfter = Double(args[3]) ?? 0
+            let t0 = Date()
+            func stamp() -> String { String(format: "%5.1fs", Date().timeIntervalSince(t0)) }
+            var lastPct = -1
+            let obs = wheel.model.$progress.sink { p in
+                guard let p else { return }
+                let pct = Int(p * 100)
+                if pct / 25 != lastPct / 25 { lastPct = pct; print("\(stamp()) progress \(pct)%") }
+            }
+            let phaseObs = wheel.model.$phase.sink { print("\(stamp()) phase \($0)") }
+            DispatchQueue.main.async {
+                wheel.show(files: [file], mode: .convert, at: NSPoint(x: -20000, y: -20000))
+                guard let idx = wheel.model.items.firstIndex(where: { $0.id == "convert.\(target)" }) else { print("no item"); exit(2) }
+                wheel.perform(index: idx, files: [file])
+                if cancelAfter > 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + cancelAfter) {
+                        print("\(stamp()) cancelling via menu (\(JobCenter.shared.jobs.count) job)")
+                        JobCenter.shared.cancelAll()
+                    }
+                }
+                Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { _ in
+                    if JobCenter.shared.jobs.isEmpty, Date().timeIntervalSince(t0) > 0.5 {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { print("\(stamp()) done"); exit(0) }
+                    }
+                }
+            }
+            withExtendedLifetime((wheel, obs, phaseObs)) { app.run() }
             return
         }
         if args.count >= 3, args[1] == "--list" {

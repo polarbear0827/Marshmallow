@@ -108,44 +108,102 @@ enum ToolLocator {
 // MARK: - Process helper
 
 enum Shell {
+    /// Runs a process. Cancelling the calling task terminates it.
+    /// `onLine` receives output line by line (used for ffmpeg progress).
     @discardableResult
-    static func run(_ executable: String, _ args: [String], cwd: URL? = nil) async throws -> String {
-        try await withCheckedThrowingContinuation { cont in
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: executable)
-            p.arguments = args
-            if let cwd { p.currentDirectoryURL = cwd }
-            let out = Pipe()
-            p.standardOutput = out
-            p.standardError = out
-            final class Buffer: @unchecked Sendable { var data = Data() }
-            let buf = Buffer()
-            let q = DispatchQueue(label: "shell.read")
-            out.fileHandleForReading.readabilityHandler = { h in
-                let chunk = h.availableData
-                q.sync { buf.data.append(chunk) }
-            }
-            p.terminationHandler = { proc in
-                out.fileHandleForReading.readabilityHandler = nil
-                let rest = out.fileHandleForReading.readDataToEndOfFile()
-                let text: String = q.sync { buf.data.append(rest); return String(decoding: buf.data, as: UTF8.self) }
-                if proc.terminationStatus == 0 {
-                    cont.resume(returning: text)
-                } else {
-                    let tail = text.split(separator: "\n").suffix(4).joined(separator: "\n")
-                    cont.resume(throwing: MarshmallowError("\((executable as NSString).lastPathComponent) 失敗：\(tail)"))
+    static func run(_ executable: String, _ args: [String], cwd: URL? = nil,
+                    onLine: (@Sendable (String) -> Void)? = nil) async throws -> String {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: executable)
+        p.arguments = args
+        if let cwd { p.currentDirectoryURL = cwd }
+        final class Box: @unchecked Sendable { var proc: Process?; var cancelled = false }
+        let box = Box(); box.proc = p
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
+                let out = Pipe()
+                p.standardOutput = out
+                p.standardError = out
+                final class Buffer: @unchecked Sendable { var data = Data(); var pending = Data() }
+                let buf = Buffer()
+                let q = DispatchQueue(label: "shell.read")
+                out.fileHandleForReading.readabilityHandler = { h in
+                    let chunk = h.availableData
+                    q.sync {
+                        buf.data.append(chunk)
+                        guard let onLine else { return }
+                        buf.pending.append(chunk)
+                        while let nl = buf.pending.firstIndex(of: 0x0A) {
+                            onLine(String(decoding: buf.pending[buf.pending.startIndex..<nl], as: UTF8.self))
+                            buf.pending.removeSubrange(buf.pending.startIndex...nl)
+                        }
+                    }
                 }
+                p.terminationHandler = { proc in
+                    out.fileHandleForReading.readabilityHandler = nil
+                    let rest = out.fileHandleForReading.readDataToEndOfFile()
+                    let text: String = q.sync { buf.data.append(rest); return String(decoding: buf.data, as: UTF8.self) }
+                    // Tools like ffmpeg catch SIGTERM and exit "normally", so rely on our own flag.
+                    if box.cancelled {
+                        cont.resume(throwing: CancellationError())
+                    } else if proc.terminationStatus == 0 {
+                        cont.resume(returning: text)
+                    } else {
+                        // Drop ffmpeg's `key=value` progress lines; keep the real error.
+                        let lines = text.split(separator: "\n").filter { line in
+                            !line.contains("=") || line.contains(" ") || line.hasPrefix("Error")
+                        }
+                        let tail = lines.suffix(3).joined(separator: "\n")
+                        cont.resume(throwing: MarshmallowError("\((executable as NSString).lastPathComponent) 失敗：\(tail)"))
+                    }
+                }
+                do { try p.run() } catch { cont.resume(throwing: error) }
             }
-            do { try p.run() } catch { cont.resume(throwing: error) }
+        } onCancel: {
+            box.cancelled = true
+            if box.proc?.isRunning == true { box.proc?.terminate() }
         }
     }
 
-    /// Runs ffmpeg with `-y -hide_banner -loglevel error` prepended.
-    static func ffmpeg(_ args: [String]) async throws {
+    /// Runs ffmpeg with `-y -hide_banner -loglevel error` prepended. The last
+    /// argument must be the output path; it is deleted if the job is cancelled.
+    /// With `duration`, progress is reported to the current job.
+    static func ffmpeg(_ args: [String], duration: Double? = nil) async throws {
         guard let ff = ToolLocator.ffmpeg else {
             throw MarshmallowError("需要 ffmpeg：請執行 brew install ffmpeg")
         }
-        try await run(ff, ["-y", "-hide_banner", "-loglevel", "error", "-nostdin"] + args)
+        var full = ["-y", "-hide_banner", "-loglevel", "error", "-nostdin"]
+        var onLine: (@Sendable (String) -> Void)?
+        if let duration, duration > 0, let job = JobContext.current {
+            full += ["-progress", "pipe:1", "-nostats"]
+            onLine = { line in
+                if line.hasPrefix("out_time_us="), let us = Double(line.dropFirst(12)) {
+                    job.report(min(1, max(0, us / 1_000_000 / duration)))
+                }
+            }
+        }
+        do {
+            try await run(ff, full + args, onLine: onLine)
+        } catch {
+            if let out = args.last { try? FileManager.default.removeItem(atPath: out) }   // never leave half-written files
+            if error is CancellationError { throw error }
+            throw friendlyFFmpegError(error.localizedDescription)
+        }
+    }
+
+    /// Plain-language versions of common ffmpeg failures.
+    static func friendlyFFmpegError(_ raw: String) -> MarshmallowError {
+        let map: [(String, String)] = [
+            ("Invalid data found", "檔案好像壞掉了，或不是能辨識的影音格式。"),
+            ("does not contain any stream", "這個檔案裡沒有可以轉換的影像或聲音。"),
+            ("Output file does not contain any stream", "這個檔案裡沒有可以轉換的影像或聲音。"),
+            ("matches no streams", "這個檔案沒有聲音軌，無法做這個操作。"),
+            ("No space left on device", "磁碟空間不足。"),
+            ("Permission denied", "沒有權限讀取或寫入這個位置。"),
+            ("Unknown encoder", "你安裝的 ffmpeg 缺少需要的編碼器，請執行 brew reinstall ffmpeg。"),
+        ]
+        for (needle, msg) in map where raw.contains(needle) { return MarshmallowError(msg) }
+        return MarshmallowError(raw)
     }
 }
 
