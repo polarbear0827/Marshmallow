@@ -23,7 +23,9 @@ enum Catalog {
         let exts = Set(files.map { $0.pathExtension.lowercased() })
         switch mode {
         case .convert: return Array(convertItems(kind: kind, excluding: exts).prefix(maxItems))
-        case .tools: return Array(toolItems(kind: kind).prefix(maxItems))
+        case .tools:
+            let mixedMergeable = kind == .other && files.count > 1 && files.allSatisfy { [.image, .pdf].contains(FileKind.of($0)) }
+            return Array(toolItems(kind: mixedMergeable ? .pdf : kind, files: files).prefix(maxItems))
         case .actions: return actionItems(files: files)
         }
     }
@@ -50,10 +52,20 @@ enum Catalog {
         }
         switch kind {
         case .image:
-            return ["jpg", "png", "webp", "heic", "avif", "pdf", "tiff", "gif", "bmp", "ico", "icns"]
+            // Same order as Tangerine's wheel, clockwise from the top.
+            return ["jpg", "png", "webp", "heic", "tiff", "avif", "bmp", "pdf", "docx", "gif", "ico", "icns"]
                 .filter(notSame)
                 .filter { $0 != "webp" || ToolLocator.cwebp != nil || ToolLocator.hasFFmpeg }
-                .map { ext in fmt(ext) { try ImageEngine.convert($0, to: ext) } }
+                .map { ext in
+                    if ext == "docx" {
+                        return fmt(ext) { u in
+                            let out = OutputNamer.url(for: u, ext: "docx")
+                            try await OfficeWriter.docx(images: [try ImageEngine.load(u)], to: out)
+                            return out
+                        }
+                    }
+                    return fmt(ext) { try ImageEngine.convert($0, to: ext) }
+                }
         case .video:
             let all = ["mp4", "mov", "webm", "gif", "hevc", "mkv", "mp3", "m4a", "wav"]
             return all.filter(notSame)
@@ -82,67 +94,71 @@ enum Catalog {
         WheelItem(id: "tool.\(id)", title: title, symbol: symbol, run: each(body))
     }
 
+    static func toolItems(kind: FileKind, files: [URL]) -> [WheelItem] {
+        let mergeable = files.count > 1 && files.allSatisfy { [.image, .pdf].contains(FileKind.of($0)) }
+        let merge = WheelItem(id: "tool.merge", title: "MERGE", symbol: "rectangle.stack") { urls in
+            .files([try DocumentEngine.merge(urls)])
+        }
+        let base = toolItems(kind: kind)
+        return mergeable ? [merge] + base.prefix(maxItems - 1) : base
+    }
+
+    /// Opens the interactive image editor (one window per file, at most 4).
+    private static func editor(_ id: String, _ title: String, _ symbol: String, _ mode: EditorMode) -> WheelItem {
+        WheelItem(id: "tool.\(id)", title: title, symbol: symbol) { urls in
+            try await MainActor.run { for u in urls.prefix(4) { try ImageEditorWindow.present(u, mode: mode) } }
+            return .message("已開啟\(mode.title)視窗")
+        }
+    }
+
     static func toolItems(kind: FileKind) -> [WheelItem] {
         switch kind {
         case .image:
+            // Tangerine's lineup, clockwise from the top.
             return [
                 tool("compress", "COMPRESS", "arrow.down.right.and.arrow.up.left") { try ImageEngine.compress($0) },
-                tool("metadata", "METADATA", "tag.slash") { try ImageEngine.stripMetadata($0) },
-                tool("removebg", "REMOVE BG", "person.crop.rectangle") {
-                    try ImageEngine.transform($0, suffix: "no bg", forceExt: "png") { try ImageEngine.removeBackground($0) }
-                },
-                tool("addbg", "ADD BG", "photo.fill") {
-                    try ImageEngine.transform($0, suffix: "white bg") { ImageEngine.flatten($0, background: .white) }
-                },
-                tool("redact", "REDACT", "eye.slash") {
-                    try ImageEngine.transform($0, suffix: "redacted") { try ImageEngine.redact($0) }
-                },
-                tool("crop", "CROP", "crop") {
-                    try ImageEngine.transform($0, suffix: "cropped") { ImageEngine.autoCrop($0) }
-                },
-                tool("resize", "RESIZE 50%", "arrow.down.left.and.arrow.up.right") {
-                    try ImageEngine.transform($0, suffix: "50%") { ImageEngine.scaled($0, factor: 0.5) }
-                },
-                tool("rotate", "ROTATE", "rotate.right") {
-                    try ImageEngine.transform($0, suffix: "rotated") { ImageEngine.rotated90($0) }
-                },
-                tool("flip", "FLIP", "arrow.left.and.right.righttriangle.left.righttriangle.right") {
-                    try ImageEngine.transform($0, suffix: "flipped") { ImageEngine.flippedHorizontally($0) }
-                },
-                tool("gray", "GRAYSCALE", "circle.lefthalf.filled") {
-                    try ImageEngine.transform($0, suffix: "grayscale") { ImageEngine.grayscale($0) }
-                },
+                tool("metadata", "METADATA", "tag") { try ImageEngine.stripMetadata($0) },
+                editor("edit", "EDIT", "slider.horizontal.3", .edit),
+                editor("annotate", "ANNOTATE", "pencil.tip.crop.circle", .annotate),
+                editor("addbg", "ADD BG", "photo", .addBackground),
+                editor("crop", "CROP", "crop", .crop),
+                editor("redact", "REDACT", "eye.slash", .redact),
             ]
         case .video, .audio:
             typealias T = MediaEngine.Tool
             let video: [(T, String, String)] = [
                 (.compress, "COMPRESS", "arrow.down.right.and.arrow.up.left"),
-                (.metadata, "METADATA", "tag.slash"),
+                (.metadata, "METADATA", "tag"),
                 (.mute, "MUTE", "speaker.slash"),
                 (.extractAudio, "AUDIO", "waveform"),
                 (.snapshot, "SNAPSHOT", "camera"),
                 (.resize720, "720P", "arrow.down.left.and.arrow.up.right"),
                 (.rotate, "ROTATE", "rotate.right"),
-                (.speed2x, "2× SPEED", "hare"),
             ]
             let audio: [(T, String, String)] = [
                 (.compress, "COMPRESS", "arrow.down.right.and.arrow.up.left"),
-                (.metadata, "METADATA", "tag.slash"),
+                (.metadata, "METADATA", "tag"),
                 (.normalize, "NORMALIZE", "slider.horizontal.3"),
-                (.trimSilence, "TRIM SILENCE", "scissors"),
+                (.trimSilence, "TRIM SILENCE", "waveform.badge.minus"),
                 (.mono, "MONO", "speaker.wave.1"),
                 (.speed2x, "2× SPEED", "hare"),
                 (.reverse, "REVERSE", "backward"),
             ]
             let native = MediaEngine.nativeTools(for: kind)
-            return (kind == .video ? video : audio)
+            let trim = WheelItem(id: "tool.trim", title: "TRIM", symbol: "timeline.selection") { urls in
+                await MainActor.run { urls.prefix(4).forEach { TrimEditor.present($0) } }
+                return .message("已開啟剪輯視窗")
+            }
+            var list = (kind == .video ? video : audio)
                 .filter { ToolLocator.hasFFmpeg || native.contains($0.0) }
                 .map { t in tool(t.0.rawValue, t.1, t.2) { try await MediaEngine.apply(t.0, to: $0) } }
+            list.insert(trim, at: min(2, list.count))
+            return list
         case .pdf:
             typealias P = DocumentEngine.PDFTool
             let list: [(P, String, String, String)] = [
                 (.compress, "compress", "COMPRESS", "arrow.down.right.and.arrow.up.left"),
-                (.metadata, "metadata", "METADATA", "tag.slash"),
+                (.metadata, "metadata", "METADATA", "tag"),
                 (.rotate, "rotate", "ROTATE", "rotate.right"),
                 (.split, "split", "SPLIT", "square.split.2x1"),
                 (.reverse, "reverse", "REVERSE", "arrow.up.arrow.down"),
@@ -180,17 +196,13 @@ enum Catalog {
 
     // MARK: Actions
 
+    /// Actions wheel — same lineup as Tangerine's: AirDrop, floating shelf, copy path, Terminal…
     static func actionItems(files: [URL]) -> [WheelItem] {
-        var items: [WheelItem] = [
+        [
             share("airdrop", "AIRDROP", "dot.radiowaves.up.forward", .sendViaAirDrop),
-            share("messages", "MESSAGES", "message", .composeMessage),
-            share("mail", "MAIL", "envelope", .composeEmail),
-            WheelItem(id: "action.copy", title: "COPY", symbol: "doc.on.doc") { urls in
-                await MainActor.run {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.writeObjects(urls as [NSURL])
-                }
-                return .message("已複製 \(urls.count) 個檔案")
+            WheelItem(id: "action.float", title: "FLOAT", symbol: "pin") { urls in
+                await MainActor.run { FloatingShelf.show(urls) }
+                return .message("已放到浮動視窗")
             },
             WheelItem(id: "action.path", title: "COPY PATH", symbol: "link") { urls in
                 await MainActor.run {
@@ -199,31 +211,24 @@ enum Catalog {
                 }
                 return .message("已複製路徑")
             },
+            WheelItem(id: "action.terminal", title: "TERMINAL", symbol: "terminal") { urls in
+                let dir = urls[0].hasDirectoryPath ? urls[0] : urls[0].deletingLastPathComponent()
+                try await Shell.run("/usr/bin/open", ["-a", "Terminal", dir.path])
+                return .message("已在終端機開啟")
+            },
+            WheelItem(id: "action.copy", title: "COPY", symbol: "doc.on.doc") { urls in
+                await MainActor.run {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.writeObjects(urls as [NSURL])
+                }
+                return .message("已拷貝 \(urls.count) 個檔案")
+            },
             WheelItem(id: "action.zip", title: "ZIP", symbol: "archivebox") { urls in
                 .files([try await zip(urls)])
             },
-            WheelItem(id: "action.duplicate", title: "DUPLICATE", symbol: "plus.square.on.square") { urls in
-                var outs: [URL] = []
-                for u in urls {
-                    let dest = OutputNamer.unique(u.deletingLastPathComponent().appendingPathComponent(u.deletingPathExtension().lastPathComponent + " copy").appendingPathExtension(u.pathExtension))
-                    try FileManager.default.copyItem(at: u, to: dest)
-                    outs.append(dest)
-                }
-                return .files(outs)
-            },
+            share("messages", "MESSAGES", "message", .composeMessage),
+            share("mail", "MAIL", "envelope", .composeEmail),
         ]
-        let mergeable = files.allSatisfy { [.image, .pdf].contains(FileKind.of($0)) }
-        if files.count > 1 && mergeable {
-            items.append(WheelItem(id: "action.merge", title: "MERGE PDF", symbol: "doc.on.doc.fill") { urls in
-                .files([try DocumentEngine.merge(urls)])
-            })
-        } else {
-            items.append(WheelItem(id: "action.reveal", title: "REVEAL", symbol: "folder") { urls in
-                await MainActor.run { NSWorkspace.shared.activateFileViewerSelecting(urls) }
-                return .message("已在 Finder 顯示")
-            })
-        }
-        return items
     }
 
     private static func share(_ id: String, _ title: String, _ symbol: String, _ name: NSSharingService.Name) -> WheelItem {

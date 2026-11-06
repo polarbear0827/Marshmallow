@@ -53,18 +53,27 @@ final class DropView: NSView, NSDraggingSource {
     override func wantsPeriodicDraggingUpdates() -> Bool { false }
 
     private func update(_ sender: NSDraggingInfo) -> NSDragOperation {
-        guard let c = controller, c.model.phase == .choosing, !c.isDraggingOut else { return [] }
+        guard let c = controller, c.isVisible, c.model.phase == .choosing, !c.isDraggingOut else { return [] }
         let idx = WheelGeometry.segment(at: rel(sender.draggingLocation), count: c.model.items.count)
         c.setHover(idx)
-        return idx == nil ? [] : .copy
+        // Accept (so nothing underneath gets the drop) but never ask the source to
+        // move: the original file is left untouched. ⌘ limits the mask to move/generic.
+        let mask = sender.draggingSourceOperationMask
+        if mask.contains(.copy) { return .copy }
+        if mask.contains(.generic) { return .generic }
+        return mask.contains(.link) ? .link : .copy
     }
 
-    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        controller?.model.hovered != nil
-    }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { true }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
-        guard let c = controller, let idx = c.model.hovered else { return false }
+        if ProcessInfo.processInfo.environment["MM_DEBUG"] != nil { NSLog("MM performDragOperation") }
+        guard let c = controller, c.isVisible else { return false }
+        guard let idx = c.model.hovered else {
+            // Dropped on the hole / rim: swallow it and cancel.
+            DispatchQueue.main.async { c.hide() }
+            return true
+        }
         let urls = (sender.draggingPasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]) ?? c.model.files
         c.perform(index: idx, files: urls)
         return true
@@ -122,11 +131,16 @@ final class WheelController {
     private(set) var isVisible = false
     var isDraggingOut = false
     private var isBusy = false
+    /// Everything that draws. Hidden while the panel sits invisibly at the press point.
+    private let visuals: NSView
 
     init() {
         let size = WheelGeometry.size
         let container = NSView(frame: NSRect(x: 0, y: 0, width: size, height: size))
         container.wantsLayer = true
+        visuals = NSView(frame: container.bounds)
+        visuals.isHidden = true
+        container.addSubview(visuals)
 
         // On macOS 26+ the Liquid Glass comes from SwiftUI (`glassEffect`).
         // Older systems get a frosted, circle-masked blur disc underneath.
@@ -142,23 +156,46 @@ final class WheelController {
                 NSBezierPath(ovalIn: r).fill()
                 return true
             }
-            container.addSubview(v)
+            visuals.addSubview(v)
         }
 
         let host = NSHostingView(rootView: WheelView(model: model))
         host.frame = container.bounds
-        container.addSubview(host)
+        visuals.addSubview(host)
 
         dropView = DropView(frame: container.bounds)
         container.addSubview(dropView)
         panel.contentView = container
         dropView.controller = self
-
     }
 
-
-
     // MARK: Lifecycle
+
+    /// Panel origin that centers the wheel on `point`, kept on screen.
+    private func frameOrigin(centeredAt point: NSPoint) -> NSPoint {
+        let size = WheelGeometry.size
+        var origin = NSPoint(x: point.x - size / 2, y: point.y - size / 2)
+        if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) {
+            let f = screen.visibleFrame
+            origin.x = min(max(origin.x, f.minX - WheelGeometry.padding), f.maxX - size + WheelGeometry.padding)
+            origin.y = min(max(origin.y, f.minY - WheelGeometry.padding), f.maxY - size + WheelGeometry.padding)
+        }
+        return origin
+    }
+
+    /// Called on every left-button press. The drag system only routes a drag to
+    /// windows that were already on screen when the drag began, so an invisible
+    /// (fully transparent, click-through) panel is put in place at the press point.
+    /// If a drag follows, the wheel is revealed right there and catches the drop,
+    /// which also keeps the drop from landing on a window underneath.
+    func prepare(at point: NSPoint) {
+        guard !isVisible, !isBusy else { return }
+        visuals.isHidden = true
+        panel.ignoresMouseEvents = true
+        panel.alphaValue = 1
+        panel.setFrameOrigin(frameOrigin(centeredAt: point))
+        panel.orderFrontRegardless()
+    }
 
     func show(files: [URL], mode: WheelMode, at point: NSPoint) {
         let items = Catalog.items(mode: mode, files: files)
@@ -177,17 +214,13 @@ final class WheelController {
         model.phase = .choosing
         if let f = files.first { model.loadThumbnail(for: f) }
 
-        let size = WheelGeometry.size
-        var origin = NSPoint(x: point.x - size / 2, y: point.y - size / 2)
-        if let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) }) {
-            let f = screen.visibleFrame
-            origin.x = min(max(origin.x, f.minX - WheelGeometry.padding), f.maxX - size + WheelGeometry.padding)
-            origin.y = min(max(origin.y, f.minY - WheelGeometry.padding), f.maxY - size + WheelGeometry.padding)
-        }
-        panel.setFrameOrigin(origin)
+        let origin = frameOrigin(centeredAt: point)
+        if panel.frame.origin != origin { panel.setFrameOrigin(origin) }
         // Fade at the window level; SwiftUI view animations stall while another
         // app owns the drag session and leave ghost frames behind.
         panel.alphaValue = 0
+        visuals.isHidden = false
+        panel.ignoresMouseEvents = false
         panel.orderFrontRegardless()
         isVisible = true
         NSAnimationContext.runAnimationGroup { ctx in
@@ -246,7 +279,9 @@ final class WheelController {
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak self] in
             guard let self, !self.isVisible else { return }
-            self.panel.orderOut(nil)
+            // Stay ordered in, but fully transparent and click-through.
+            self.visuals.isHidden = true
+            self.panel.ignoresMouseEvents = true
             self.panel.alphaValue = 1
             self.model.phase = .choosing
             self.model.results = []

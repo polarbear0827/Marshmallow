@@ -10,10 +10,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         setupStatusItem()
 
-        monitor.onDrag = { [weak self] files, mode, location in
+        monitor.onMouseDown = { [weak self] p in
+            guard Settings.shared.enabled else { return }
+            self?.wheel.prepare(at: p)
+        }
+        monitor.onDrag = { [weak self] files, mode, origin, location in
             guard let self, Settings.shared.enabled else { return }
             if self.wheel.isDraggingOut { self.monitor.ignoreCurrentDrag = true; return }
-            if let mode { self.wheel.show(files: files, mode: mode, at: location) }
+            if let mode { self.wheel.show(files: files, mode: mode, at: origin) }
             self.wheel.trackPointer(location)
         }
         monitor.onDragEnded = { [weak self] location in
@@ -174,6 +178,24 @@ enum MarshmallowMain {
                 }
             }
             withExtendedLifetime(wheel) { app.run() }
+            return
+        }
+        // Editor check: Marshmallow --editor-test <edit|annotate|crop|redact|addBackground> <file>
+        // Opens off-screen (no focus change), prints the window number, saves the result.
+        if args.count >= 4, args[1] == "--editor-test", let mode = EditorMode(rawValue: args[2]) {
+            setvbuf(stdout, nil, _IONBF, 0)
+            app.setActivationPolicy(.accessory)
+            DispatchQueue.main.async {
+                do {
+                    let (w, model) = try ImageEditorWindow.presentForTest(URL(fileURLWithPath: args[3]), mode: mode)
+                    print("WINDOW \(w.windowNumber)")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        do { print("SAVED \(try model.save().path)") } catch { print("ERROR \(error)") }
+                        exit(0)
+                    }
+                } catch { print("ERROR \(error)"); exit(1) }
+            }
+            app.run()
             return
         }
         if args.count >= 3, args[1] == "--list" {

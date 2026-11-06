@@ -216,7 +216,9 @@ struct CenterView: View {
     var body: some View {
         let d = WheelGeometry.centerRadius * 2
         ZStack {
-            if let img = model.thumbnail {
+            // While choosing, the hole stays transparent so the original file icon
+            // underneath shows through; afterwards it shows the result preview.
+            if model.phase != .choosing, let img = model.thumbnail {
                 Image(nsImage: img)
                     .resizable()
                     .aspectRatio(contentMode: .fill)

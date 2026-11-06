@@ -6,7 +6,10 @@ import AppKit
 /// button is down, a drag session has started. Modifier keys are read from
 /// `NSEvent.modifierFlags`, which works globally.
 final class DragMonitor {
-    var onDrag: ((_ files: [URL], _ mode: WheelMode?, _ location: NSPoint) -> Void)?
+    /// `origin` is where the mouse went down (the wheel is centered there, like Tangerine).
+    var onDrag: ((_ files: [URL], _ mode: WheelMode?, _ origin: NSPoint, _ location: NSPoint) -> Void)?
+    /// Fired as soon as the left button goes down, before any drag starts.
+    var onMouseDown: ((NSPoint) -> Void)?
     var onDragEnded: ((_ location: NSPoint) -> Void)?
     var onClick: ((NSPoint) -> Void)?
 
@@ -15,13 +18,14 @@ final class DragMonitor {
     private var wasDown = false
     private var startCount = 0
     private var files: [URL]?
+    private var origin = NSPoint.zero
     private var clickMonitor: Any?
     /// Set while Marshmallow itself is the drag source.
     var ignoreCurrentDrag = false
 
     func start() {
         guard timer == nil else { return }
-        let t = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in self?.tick() }
+        let t = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
@@ -40,6 +44,8 @@ final class DragMonitor {
             wasDown = true
             startCount = dragPasteboard.changeCount
             files = nil
+            origin = NSEvent.mouseLocation
+            onMouseDown?(origin)
             return
         }
         if !down && wasDown {
@@ -59,6 +65,6 @@ final class DragMonitor {
         }
         guard let files, !files.isEmpty, !ignoreCurrentDrag else { return }
         let mode = Settings.shared.mode(for: NSEvent.modifierFlags)
-        onDrag?(files, mode, NSEvent.mouseLocation)
+        onDrag?(files, mode, origin, NSEvent.mouseLocation)
     }
 }

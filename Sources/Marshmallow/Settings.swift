@@ -17,12 +17,14 @@ enum WheelMode: String, CaseIterable, Identifiable {
 
 /// Modifier combinations a wheel can be bound to.
 enum ModifierCombo: String, CaseIterable, Identifiable {
-    case shift, shiftOption, shiftCommand, shiftControl, control, controlOption, disabled
+    case shift, command, control, option, shiftOption, shiftCommand, shiftControl, controlOption, disabled
     var id: String { rawValue }
 
     var flags: NSEvent.ModifierFlags? {
         switch self {
         case .shift: return [.shift]
+        case .command: return [.command]
+        case .option: return [.option]
         case .shiftOption: return [.shift, .option]
         case .shiftCommand: return [.shift, .command]
         case .shiftControl: return [.shift, .control]
@@ -35,6 +37,8 @@ enum ModifierCombo: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .shift: return "⇧ Shift"
+        case .command: return "⌘ Command"
+        case .option: return "⌥ Option"
         case .shiftOption: return "⇧⌥ Shift + Option"
         case .shiftCommand: return "⇧⌘ Shift + Command"
         case .shiftControl: return "⇧⌃ Shift + Control"
@@ -73,8 +77,8 @@ final class Settings: ObservableObject {
         UserDefaults.standard.register(defaults: [
             "enabled": true,
             "convertCombo": ModifierCombo.shift.rawValue,
-            "toolsCombo": ModifierCombo.shiftOption.rawValue,
-            "actionsCombo": ModifierCombo.shiftCommand.rawValue,
+            "toolsCombo": ModifierCombo.command.rawValue,
+            "actionsCombo": ModifierCombo.control.rawValue,
             "outputLocation": OutputLocation.sameFolder.rawValue,
             "quality": 0.85,
             "playSound": true,
@@ -90,10 +94,10 @@ final class Settings: ObservableObject {
     @Published var convertCombo: ModifierCombo = ModifierCombo(rawValue: UserDefaults.standard.string(forKey: "convertCombo") ?? "") ?? .shift {
         didSet { d.set(convertCombo.rawValue, forKey: "convertCombo") }
     }
-    @Published var toolsCombo: ModifierCombo = ModifierCombo(rawValue: UserDefaults.standard.string(forKey: "toolsCombo") ?? "") ?? .shiftOption {
+    @Published var toolsCombo: ModifierCombo = ModifierCombo(rawValue: UserDefaults.standard.string(forKey: "toolsCombo") ?? "") ?? .command {
         didSet { d.set(toolsCombo.rawValue, forKey: "toolsCombo") }
     }
-    @Published var actionsCombo: ModifierCombo = ModifierCombo(rawValue: UserDefaults.standard.string(forKey: "actionsCombo") ?? "") ?? .shiftCommand {
+    @Published var actionsCombo: ModifierCombo = ModifierCombo(rawValue: UserDefaults.standard.string(forKey: "actionsCombo") ?? "") ?? .control {
         didSet { d.set(actionsCombo.rawValue, forKey: "actionsCombo") }
     }
     @Published var outputLocation: OutputLocation = OutputLocation(rawValue: UserDefaults.standard.string(forKey: "outputLocation") ?? "") ?? .sameFolder {

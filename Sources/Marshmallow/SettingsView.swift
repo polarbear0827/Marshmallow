@@ -38,7 +38,7 @@ struct SettingsView: View {
             } header: {
                 Text("快捷鍵（拖曳中按住）")
             } footer: {
-                Text("提示：Finder 拖曳時單按 ⌘ 會變成「搬移」、單按 ⌥ 會變成「拷貝」，因此預設都搭配 ⇧ Shift。")
+                Text("預設與 Tangerine 相同：⇧ 轉檔、⌘ 工具、⌃ 動作。放開在輪盤上時，原始檔案不會被搬移或更動。")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
