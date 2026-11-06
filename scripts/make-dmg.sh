@@ -1,12 +1,12 @@
 #!/bin/bash
-# Packages build/Marshmallow.app into a drag-to-install DMG:
+# Packages build/app.noindex/Marshmallow.app into a drag-to-install DMG:
 #   dist/Marshmallow-<version>.dmg
 # Usage: scripts/make-dmg.sh <version>
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${1:-$(cat VERSION)}"
-APP="build/Marshmallow.app"
+APP="build/app.noindex/Marshmallow.app"
 VOL="Marshmallow"
 OUT="dist/Marshmallow-$VERSION.dmg"
 

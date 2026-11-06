@@ -5,14 +5,14 @@ cd "$(dirname "$0")/.."
 
 VERSION="${1:-$(cat VERSION)}"
 BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
-APP="build/Marshmallow.app"
+APP="build/app.noindex/Marshmallow.app"
 
 echo "▸ Building Marshmallow $VERSION ($BUILD_NUMBER)"
 swift build -c release --arch arm64 --arch x86_64
 BIN="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)/Marshmallow"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"  # app.noindex: keep dev builds out of Spotlight
 cp "$BIN" "$APP/Contents/MacOS/Marshmallow"
 
 if [ ! -f build/AppIcon.icns ]; then

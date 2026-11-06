@@ -2,7 +2,7 @@
 # Invoked by scripts/make-dmg.sh with -D app=<path> -D background=<path>
 import os.path
 
-app = defines.get("app", "build/Marshmallow.app")  # noqa: F821 (provided by dmgbuild)
+app = defines.get("app", "build/app.noindex/Marshmallow.app")  # noqa: F821 (provided by dmgbuild)
 appname = os.path.basename(app)
 
 format = "UDZO"
