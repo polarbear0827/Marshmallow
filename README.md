@@ -11,9 +11,12 @@
 
 ## 📥 下載與安裝
 
-1. 到 **[Releases 下載頁](https://github.com/polarbear0827/Marshmallow/releases/latest)**，下載 `Marshmallow-x.x.x.zip`。
-2. 打開 zip，把 **Marshmallow** 拖進「**應用程式**」資料夾。
-3. 打開 Marshmallow。第一次開啟時，macOS 可能會說「無法確認開發者」：
+1. 到 **[下載頁](https://github.com/polarbear0827/Marshmallow/releases/latest)**，下載 **`Marshmallow-x.x.x.dmg`**。
+2. 打開下載好的 dmg，會看到這個視窗，把**棉花糖**拖到右邊的「**Applications**」資料夾，就安裝好了：
+
+   <img src="docs/dmg-window.png" width="460" alt="把棉花糖拖進應用程式">
+
+3. 到「應用程式」資料夾打開 Marshmallow。第一次開啟時，macOS 可能會說「無法確認開發者」：
    - 打開「**系統設定 → 隱私權與安全性**」，捲到最下面，按「**仍要打開**」。
 4. 打開後會出現**新手教學**，跟著練習一遍就會了（大約 1 分鐘）。
 

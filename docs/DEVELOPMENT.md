@@ -8,6 +8,7 @@
 
 ```bash
 scripts/build-app.sh          # 產生 build/Marshmallow.app 與 dist/Marshmallow-<版本>.zip
+scripts/make-dmg.sh           # 產生拖曳安裝的 dist/Marshmallow-<版本>.dmg（第一次會在 build/venv 安裝 dmgbuild）
 ```
 
 開發用的隱藏指令：
