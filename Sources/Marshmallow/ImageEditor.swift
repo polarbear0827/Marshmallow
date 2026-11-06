@@ -332,7 +332,9 @@ final class ImageEditorModel: ObservableObject {
         if ImageEngine.utType(forExt: ext) == nil || ["gif", "ico", "icns", "svg"].contains(ext) { ext = "png" }
         if mode == .addBackground && Backdrop.all[backdrop].colors.isEmpty { ext = "png" }
         let out = OutputNamer.url(for: url, ext: ext, suffix: mode.suffix)
-        try ImageEngine.save(render(), to: out, quality: 0.95)
+        // Redaction is about privacy, so it never carries capture info over.
+        try ImageEngine.save(render(), to: out, quality: 0.95,
+                             metadata: mode == .redact ? nil : ImageEngine.captureInfo(from: url))
         return out
     }
 }

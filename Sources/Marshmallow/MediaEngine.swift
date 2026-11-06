@@ -38,7 +38,7 @@ enum MediaEngine {
         let out = OutputNamer.url(for: url, ext: ext, suffix: target == "hevc" ? "HEVC" : nil)
         let isVideo = FileKind.of(url) == .video
         if ToolLocator.hasFFmpeg {
-            try await Shell.ffmpeg(["-i", url.path] + ffmpegArgs(forTarget: target, sourceIsVideo: isVideo) + [out.path])
+            try await ff(url, ["-i", url.path] + ffmpegArgs(forTarget: target, sourceIsVideo: isVideo) + [out.path])
             return out
         }
         // AVFoundation fallbacks
@@ -74,62 +74,62 @@ enum MediaEngine {
             case .compress:
                 if isVideo {
                     let out = OutputNamer.url(for: url, ext: "mp4", suffix: "compressed")
-                    try await Shell.ffmpeg(i + ["-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-crf", "28", "-preset", "slow", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out.path])
+                    try await ff(url, i + ["-vf", "scale='min(1920,iw)':-2", "-c:v", "libx264", "-crf", "28", "-preset", "slow", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", out.path])
                     return out
                 } else {
                     let out = OutputNamer.url(for: url, ext: "m4a", suffix: "compressed")
-                    try await Shell.ffmpeg(i + ["-vn", "-c:a", "aac", "-b:a", "96k", out.path])
+                    try await ff(url, i + ["-vn", "-c:a", "aac", "-b:a", "96k", out.path])
                     return out
                 }
             case .metadata:
                 let out = OutputNamer.url(for: url, ext: ext, suffix: "no metadata")
-                try await Shell.ffmpeg(i + ["-map", "0", "-map_metadata", "-1", "-map_chapters", "-1", "-c", "copy", out.path])
+                try await Shell.ffmpeg(i + ["-map", "0", "-map_metadata", "-1", "-map_chapters", "-1", "-fflags", "+bitexact", "-c", "copy", out.path])
                 return out
             case .mute:
                 let out = OutputNamer.url(for: url, ext: ext, suffix: "muted")
-                try await Shell.ffmpeg(i + ["-c", "copy", "-an", out.path])
+                try await ff(url, i + ["-c", "copy", "-an", out.path])
                 return out
             case .resize720:
                 let out = OutputNamer.url(for: url, ext: ext == "webm" ? "webm" : "mp4", suffix: "720p")
                 let codec = ext == "webm" ? ["-c:v", "libvpx-vp9", "-crf", "32", "-b:v", "0"] : ["-c:v", "libx264", "-crf", "21", "-pix_fmt", "yuv420p"]
-                try await Shell.ffmpeg(i + ["-vf", "scale=-2:'min(720,ih)'"] + codec + ["-c:a", "copy", out.path])
+                try await ff(url, i + ["-vf", "scale=-2:'min(720,ih)'"] + codec + ["-c:a", "copy", out.path])
                 return out
             case .rotate:
                 let out = OutputNamer.url(for: url, ext: ext, suffix: "rotated")
-                try await Shell.ffmpeg(i + ["-vf", "transpose=1", "-c:a", "copy", out.path])
+                try await ff(url, i + ["-vf", "transpose=1", "-c:a", "copy", out.path])
                 return out
             case .extractAudio:
                 let out = OutputNamer.url(for: url, ext: "m4a")
-                try await Shell.ffmpeg(i + ["-vn", "-c:a", "aac", "-b:a", "192k", out.path])
+                try await ff(url, i + ["-vn", "-c:a", "aac", "-b:a", "192k", out.path])
                 return out
             case .snapshot:
                 let out = OutputNamer.url(for: url, ext: "png", suffix: "frame")
                 let dur = try await duration(url)
-                try await Shell.ffmpeg(["-ss", String(format: "%.2f", dur / 2), "-i", url.path, "-frames:v", "1", out.path])
+                try await ff(url, ["-ss", String(format: "%.2f", dur / 2), "-i", url.path, "-frames:v", "1", out.path])
                 return out
             case .speed2x:
                 let out = OutputNamer.url(for: url, ext: ext, suffix: "2x")
                 if isVideo, try await hasAudio(url) {
-                    try await Shell.ffmpeg(i + ["-filter_complex", "[0:v]setpts=0.5*PTS[v];[0:a]atempo=2.0[a]", "-map", "[v]", "-map", "[a]", out.path])
+                    try await ff(url, i + ["-filter_complex", "[0:v]setpts=0.5*PTS[v];[0:a]atempo=2.0[a]", "-map", "[v]", "-map", "[a]", out.path])
                 } else {
-                    try await Shell.ffmpeg(i + (isVideo ? ["-vf", "setpts=0.5*PTS"] : ["-af", "atempo=2.0"]) + [out.path])
+                    try await ff(url, i + (isVideo ? ["-vf", "setpts=0.5*PTS"] : ["-af", "atempo=2.0"]) + [out.path])
                 }
                 return out
             case .normalize:
                 let out = OutputNamer.url(for: url, ext: ext, suffix: "normalized")
-                try await Shell.ffmpeg(i + ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000"] + (isVideo ? ["-c:v", "copy"] : []) + [out.path])
+                try await ff(url, i + ["-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000"] + (isVideo ? ["-c:v", "copy"] : []) + [out.path])
                 return out
             case .trimSilence:
                 let out = OutputNamer.url(for: url, ext: ext, suffix: "trimmed")
-                try await Shell.ffmpeg(i + ["-af", "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse", out.path])
+                try await ff(url, i + ["-af", "silenceremove=start_periods=1:start_threshold=-50dB,areverse,silenceremove=start_periods=1:start_threshold=-50dB,areverse", out.path])
                 return out
             case .mono:
                 let out = OutputNamer.url(for: url, ext: ext, suffix: "mono")
-                try await Shell.ffmpeg(i + ["-ac", "1"] + (isVideo ? ["-c:v", "copy"] : []) + [out.path])
+                try await ff(url, i + ["-ac", "1"] + (isVideo ? ["-c:v", "copy"] : []) + [out.path])
                 return out
             case .reverse:
                 let out = OutputNamer.url(for: url, ext: ext, suffix: "reversed")
-                try await Shell.ffmpeg(i + (isVideo ? ["-vf", "reverse", "-af", "areverse"] : ["-af", "areverse"]) + [out.path])
+                try await ff(url, i + (isVideo ? ["-vf", "reverse", "-af", "areverse"] : ["-af", "areverse"]) + [out.path])
                 return out
             }
         }
@@ -181,6 +181,31 @@ enum MediaEngine {
         }
     }
 
+    // MARK: Privacy
+
+    /// Runs ffmpeg with metadata handling inserted before the output path:
+    /// capture date/camera kept (per settings), GPS location always removed.
+    static func ff(_ input: URL, _ args: [String]) async throws {
+        var a = args
+        a.insert(contentsOf: await privacyArgs(input), at: max(0, a.count - 1))
+        try await Shell.ffmpeg(a)
+    }
+
+    static func privacyArgs(_ input: URL) async -> [String] {
+        guard Settings.shared.keepCaptureInfo else { return ["-map_metadata", "-1"] }
+        var a = ["-map_metadata", "0"]
+        for key in ["location", "location-eng", "com.apple.quicktime.location.ISO6709", "com.apple.quicktime.location.name"] {
+            a += ["-metadata", "\(key)="]
+        }
+        if let item = try? await AVURLAsset(url: input).load(.creationDate),
+           let date = try? await item.load(.dateValue) {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            a += ["-metadata", "creation_time=\(f.string(from: date))"]
+        }
+        return a
+    }
+
     // MARK: AVFoundation helpers
 
     static func hasAudio(_ url: URL) async throws -> Bool {
@@ -200,10 +225,9 @@ enum MediaEngine {
         guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
             throw MarshmallowError("無法建立轉檔工作")
         }
-        if stripMetadata {
-            session.metadata = []
-            session.metadataItemFilter = .forSharing()
-        }
+        // `.forSharing()` removes location and other identifying items but keeps dates.
+        session.metadataItemFilter = .forSharing()
+        if stripMetadata || !Settings.shared.keepCaptureInfo { session.metadata = [] }
         session.shouldOptimizeForNetworkUse = true
         if #available(macOS 15, *) {
             try await session.export(to: out, as: type)

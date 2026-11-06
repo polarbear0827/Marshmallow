@@ -54,6 +54,13 @@ struct SettingsView: View {
                         Button("選擇…") { chooseFolder() }
                     }
                 }
+                Toggle(isOn: $s.keepCaptureInfo) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("轉檔時保留拍攝日期與相機型號")
+                        Text("GPS 位置一律移除。「移除中繼資料」工具會清除全部資訊。")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
                 LabeledContent("有損格式品質") {
                     HStack {
                         Slider(value: $s.quality, in: 0.3...1.0)

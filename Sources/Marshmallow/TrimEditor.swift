@@ -59,7 +59,7 @@ final class TrimEditor: NSObject, NSWindowDelegate {
                 if ToolLocator.hasFFmpeg {
                     out = OutputNamer.url(for: url, ext: ext, suffix: "trimmed")
                     // Re-encode for frame-accurate cuts.
-                    try await Shell.ffmpeg(["-ss", String(format: "%.3f", range.start.seconds), "-i", url.path,
+                    try await MediaEngine.ff(url, ["-ss", String(format: "%.3f", range.start.seconds), "-i", url.path,
                                             "-t", String(format: "%.3f", range.duration.seconds)] +
                                            (isAudio ? [] : ["-c:v", "libx264", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k"]) +
                                            [out.path])

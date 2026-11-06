@@ -74,14 +74,14 @@ enum ImageEngine {
     }
 
     /// Writes `image` to `url` with the format implied by the extension.
-    static func save(_ image: CGImage, to url: URL, quality: Double? = nil) throws {
+    static func save(_ image: CGImage, to url: URL, quality: Double? = nil, metadata: [CFString: Any]? = nil) throws {
         let ext = url.pathExtension.lowercased()
         let q = quality ?? Settings.shared.quality
         var img = image
 
         switch ext {
         case "webp":
-            try saveWebP(img, to: url, quality: q)
+            try saveWebP(img, to: url, quality: q, metadata: metadata)
             return
         case "pdf":
             try savePDF([img], to: url)
@@ -99,7 +99,7 @@ enum ImageEngine {
               let dest = CGImageDestinationCreateWithURL(url as CFURL, type.identifier as CFString, 1, nil) else {
             throw MarshmallowError("不支援輸出 \(ext.uppercased())")
         }
-        var props: [CFString: Any] = [:]
+        var props: [CFString: Any] = metadata ?? [:]
         if ["jpg", "jpeg", "heic", "avif", "jp2", "webp"].contains(ext) {
             props[kCGImageDestinationLossyCompressionQuality] = q
         }
@@ -107,13 +107,15 @@ enum ImageEngine {
         guard CGImageDestinationFinalize(dest) else { throw MarshmallowError("寫入 \(ext.uppercased()) 失敗") }
     }
 
-    private static func saveWebP(_ img: CGImage, to url: URL, quality: Double) throws {
+    private static func saveWebP(_ img: CGImage, to url: URL, quality: Double, metadata: [CFString: Any]?) throws {
         let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".png")
         defer { try? FileManager.default.removeItem(at: tmp) }
-        try save(img, to: tmp)
+        try save(img, to: tmp, metadata: metadata)
         // Try system ImageIO first (newer macOS versions may support WebP writing).
         if let dest = CGImageDestinationCreateWithURL(url as CFURL, "org.webmproject.webp" as CFString, 1, nil) {
-            CGImageDestinationAddImage(dest, img, [kCGImageDestinationLossyCompressionQuality: quality] as CFDictionary)
+            var props = metadata ?? [:]
+            props[kCGImageDestinationLossyCompressionQuality] = quality
+            CGImageDestinationAddImage(dest, img, props as CFDictionary)
             if CGImageDestinationFinalize(dest) { return }
         }
         let sema = DispatchSemaphore(value: 0)
@@ -121,7 +123,7 @@ enum ImageEngine {
         Task.detached {
             do {
                 if let cwebp = ToolLocator.cwebp {
-                    try await Shell.run(cwebp, ["-quiet", "-q", String(Int(quality * 100)), "-metadata", "none", tmp.path, "-o", url.path])
+                    try await Shell.run(cwebp, ["-quiet", "-q", String(Int(quality * 100)), "-metadata", metadata == nil ? "none" : "exif", tmp.path, "-o", url.path])
                 } else if ToolLocator.hasFFmpeg {
                     try await Shell.ffmpeg(["-i", tmp.path, "-c:v", "libwebp", "-quality", String(Int(quality * 100)), url.path])
                 } else {
@@ -143,6 +145,41 @@ enum ImageEngine {
         guard doc.write(to: url) else { throw MarshmallowError("寫入 PDF 失敗") }
     }
 
+    // MARK: Capture info (date & camera, never location)
+
+    /// EXIF keys that describe *when* and *with what* a photo was taken.
+    /// Location (GPS), IPTC (place names), maker notes and serial numbers are never copied.
+    private static let keptExif: [CFString] = [
+        kCGImagePropertyExifDateTimeOriginal, kCGImagePropertyExifDateTimeDigitized,
+        kCGImagePropertyExifOffsetTime, kCGImagePropertyExifOffsetTimeOriginal, kCGImagePropertyExifOffsetTimeDigitized,
+        kCGImagePropertyExifSubsecTimeOriginal, kCGImagePropertyExifSubsecTimeDigitized,
+        kCGImagePropertyExifExposureTime, kCGImagePropertyExifFNumber, kCGImagePropertyExifISOSpeedRatings,
+        kCGImagePropertyExifFocalLength, kCGImagePropertyExifFocalLenIn35mmFilm, kCGImagePropertyExifFlash,
+        kCGImagePropertyExifExposureBiasValue, kCGImagePropertyExifExposureProgram, kCGImagePropertyExifMeteringMode,
+        kCGImagePropertyExifWhiteBalance, kCGImagePropertyExifLensMake, kCGImagePropertyExifLensModel,
+    ]
+    private static let keptTIFF: [CFString] = [kCGImagePropertyTIFFMake, kCGImagePropertyTIFFModel, kCGImagePropertyTIFFDateTime]
+
+    /// Properties to carry over from `url` when converting, per the user's setting.
+    /// Orientation is not copied: pixels are already rotated upright by `load`.
+    static func captureInfo(from url: URL) -> [CFString: Any]? {
+        guard Settings.shared.keepCaptureInfo,
+              let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let p = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any] else { return nil }
+        var out: [CFString: Any] = [:]
+        if let exif = p[kCGImagePropertyExifDictionary] as? [CFString: Any] {
+            let kept = exif.filter { keptExif.contains($0.key) }
+            if !kept.isEmpty { out[kCGImagePropertyExifDictionary] = kept }
+        }
+        if let tiff = p[kCGImagePropertyTIFFDictionary] as? [CFString: Any] {
+            var kept = tiff.filter { keptTIFF.contains($0.key) }
+            kept[kCGImagePropertyTIFFOrientation] = 1
+            out[kCGImagePropertyTIFFDictionary] = kept
+        }
+        out[kCGImagePropertyOrientation] = 1
+        return out
+    }
+
     // MARK: Conversions
 
     static func convert(_ url: URL, to ext: String) throws -> URL {
@@ -158,7 +195,7 @@ enum ImageEngine {
             if let err { throw err }
             return out
         }
-        try save(try load(url), to: out)
+        try save(try load(url), to: out, metadata: captureInfo(from: url))
         return out
     }
 
@@ -353,7 +390,7 @@ enum ImageEngine {
         }
         if outExt == "png" { q = 1 }
         let out = OutputNamer.url(for: url, ext: outExt, suffix: "compressed")
-        try save(img, to: out, quality: q)
+        try save(img, to: out, quality: q, metadata: captureInfo(from: url))
         return out
     }
 
@@ -375,7 +412,7 @@ enum ImageEngine {
         if utType(forExt: ext) == nil && ext != "webp" { ext = "png" }
         if ["svg", "gif", "ico", "icns"].contains(ext) && forceExt == nil { ext = "png" }
         let out = OutputNamer.url(for: url, ext: ext, suffix: suffix)
-        try save(try body(try load(url)), to: out, quality: 0.92)
+        try save(try body(try load(url)), to: out, quality: 0.92, metadata: suffix == "redacted" ? nil : captureInfo(from: url))
         return out
     }
 }

@@ -86,6 +86,7 @@ final class Settings: ObservableObject {
             "hideDelay": 4.0,
             "didOnboard": false,
             "showOnboarding": true,
+            "keepCaptureInfo": true,
         ])
     }
 
@@ -121,6 +122,10 @@ final class Settings: ObservableObject {
     }
     @Published var ffmpegPath: String = UserDefaults.standard.string(forKey: "ffmpegPath") ?? "" {
         didSet { d.set(ffmpegPath, forKey: "ffmpegPath"); ToolLocator.reset() }
+    }
+    /// Keep capture date & camera model when converting (location is always removed).
+    @Published var keepCaptureInfo: Bool = UserDefaults.standard.bool(forKey: "keepCaptureInfo") {
+        didSet { d.set(keepCaptureInfo, forKey: "keepCaptureInfo") }
     }
     /// Show the tutorial at launch until the user ticks「不再顯示」.
     @Published var showOnboarding: Bool = UserDefaults.standard.bool(forKey: "showOnboarding") {
