@@ -217,8 +217,15 @@ enum OfficeEngine {
         let src = url.pathExtension.lowercased()
         // Formats Numbers produces with full fidelity.
         if IWork.App.numbers.isInstalled, ["pdf", "numbers"].contains(ext) || (["xls", "numbers", "ods"].contains(src) && ["xlsx", "csv"].contains(ext)) {
-            try await IWork.export(url, with: .numbers, ext: ext, to: out)
-            return out
+            do {
+                try await IWork.export(url, with: .numbers, ext: ext, to: out)
+                return out
+            } catch {
+                // Built-in fallback works for CSV/TSV/XLSX sources (not .numbers output).
+                let nativeReadable = ["csv", "tsv", "tab", "xlsx"].contains(src)
+                if error is CancellationError || ext == "numbers" || !nativeReadable { throw error }
+                try? FileManager.default.removeItem(at: out)
+            }
         }
         let t = try await readTable(url)
         switch ext {
@@ -251,8 +258,16 @@ enum OfficeEngine {
         let pagesInputs: Set<String> = ["docx", "doc", "pages", "rtf", "txt"]
         if IWork.App.pages.isInstalled, pagesInputs.contains(src), IWork.exportFormat(.pages, ext: ext) != nil {
             let out = OutputNamer.url(for: url, ext: ext)
-            try await IWork.export(url, with: .pages, ext: ext, to: out)
-            return out
+            do {
+                try await IWork.export(url, with: .pages, ext: ext, to: out)
+                return out
+            } catch {
+                // Pages failed (e.g. it crashed on this file). Fall back to the built-in
+                // converter so the user still gets a result; only .pages truly needs Pages.
+                if error is CancellationError || ext == "pages" || src == "pages" { throw error }
+                try? FileManager.default.removeItem(at: out)
+                NSLog("Marshmallow: Pages failed (\(error.localizedDescription)); using built-in converter")
+            }
         }
         if src == "pages" {
             // Pages not installed: only Pages can read .pages; produce via Pages-docx export.

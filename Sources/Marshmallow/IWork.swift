@@ -39,18 +39,55 @@ enum IWork {
     /// Runs AppleScript against an iWork app, launching it hidden and quitting it
     /// afterwards if it wasn't already running.
     static func run(_ app: App, _ body: String) async throws {
+        try await run(app, opening: nil) { _ in body }
+    }
+
+    /// Runs AppleScript against an iWork app. When `opening` is given, the file is
+    /// first copied to a uniquely named temp file and handed to the app through
+    /// Launch Services (like double-clicking it). Asking a freshly launched Pages to
+    /// `open` some Word files via AppleScript crashes it (seen with documents that
+    /// use fonts missing on the Mac), while a Launch Services open works. The unique
+    /// name also guarantees we never touch a document the user has open.
+    /// `body` receives an AppleScript reference to that document.
+    static func run(_ app: App, opening input: URL?, _ body: @escaping (String) -> String) async throws {
         guard app.isInstalled else { throw MarshmallowError("需要 \(app.rawValue)（App Store 免費下載）") }
         // Serialize iWork jobs so one job's quit can't race the next job's launch.
         try await gate.run {
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID)
             let wasRunning = running.contains { !$0.isTerminated }
-            if !wasRunning {
+            var docRef = ""
+            var staged: URL?
+            defer { if let staged { try? FileManager.default.removeItem(at: staged.deletingLastPathComponent()) } }
+
+            if let input {
+                let name = "Marshmallow-" + UUID().uuidString.prefix(8)
+                let dir = FileManager.default.temporaryDirectory.appendingPathComponent("mm-iwork-\(UUID().uuidString)")
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let copy = dir.appendingPathComponent(name).appendingPathExtension(input.pathExtension)
+                try FileManager.default.copyItem(at: input, to: copy)
+                staged = copy
+                // -j (hidden) only when we launch it; never hide the user's running app.
+                try await Shell.run("/usr/bin/open", (wasRunning ? ["-g"] : ["-g", "-j"]) + ["-b", app.bundleID, copy.path])
+                // Imported files (docx/xlsx/pptx) are named without the extension,
+                // native iWork files keep it ("x.numbers"); match on the unique prefix.
+                docRef = "(first document whose name starts with \(q(String(name))))"
+                // Wait for the document to finish opening (large files can take a while).
+                var ready = false
+                for _ in 0..<240 {
+                    try Task.checkCancellation()
+                    if let r = try? await Shell.run("/usr/bin/osascript", ["-e", "tell application id \(q(app.bundleID)) to exists \(docRef)"]),
+                       r.contains("true") { ready = true; break }
+                    try await Task.sleep(nanoseconds: 250_000_000)
+                }
+                if !ready { throw MarshmallowError("\(app.rawValue) 沒有成功開啟這個檔案") }
+            } else if !wasRunning {
                 try await Shell.run("/usr/bin/open", ["-g", "-j", "-b", app.bundleID])
             }
+
             let script = """
             with timeout of 900 seconds
             tell application id \(q(app.bundleID))
-            \(body)
+            \(body(docRef))
             end tell
             end timeout
             """
@@ -61,6 +98,8 @@ enum IWork {
                 let msg = error.localizedDescription
                 if msg.contains("-1743") || msg.contains("Not authorized") {
                     failure = MarshmallowError("請在「系統設定 → 隱私權與安全性 → 自動化」允許 Marshmallow 控制 \(app.rawValue)")
+                } else if msg.contains("-609") {
+                    failure = MarshmallowError("\(app.rawValue) 意外結束了")
                 } else {
                     failure = MarshmallowError("\(app.rawValue) 轉換失敗：\(msg)")
                 }
@@ -87,20 +126,21 @@ enum IWork {
         let native = ["pages", "numbers", "key"].contains(ext)
         var asFormat = "as \(format)"
         if app == .keynote && ext == "pdf" { asFormat += " with properties {PDF image quality:Best}" }
-        let write = native
-            ? "save d in (POSIX file \(q(out.path)))"
-            : "export d to (POSIX file \(q(out.path))) \(asFormat)"
-        try await run(app, """
-        set d to open (POSIX file \(q(input.path)))
-        try
-            delay 0.3
-            \(write)
-        on error errMsg number errNum
+        try await run(app, opening: input) { doc in
+            let write = native
+                ? "save d in (POSIX file \(q(out.path)))"
+                : "export d to (POSIX file \(q(out.path))) \(asFormat)"
+            return """
+            set d to \(doc)
+            try
+                \(write)
+            on error errMsg number errNum
+                close d saving no
+                error errMsg number errNum
+            end try
             close d saving no
-            error errMsg number errNum
-        end try
-        close d saving no
-        """)
+            """
+        }
         guard FileManager.default.fileExists(atPath: out.path) else { throw MarshmallowError("\(app.rawValue) 沒有產生輸出檔") }
     }
 
@@ -108,16 +148,26 @@ enum IWork {
     static func slideImages(_ input: URL, ext: String) async throws -> URL {
         let folder = OutputNamer.folder(for: input, suffix: ext.uppercased())
         let fmt = ext == "png" ? "PNG" : (ext == "tiff" ? "TIFF" : "JPEG")
-        try await run(.keynote, """
-        set d to open (POSIX file \(q(input.path)))
-        try
-            export d to (POSIX file \(q(folder.path))) as slide images with properties {image format:\(fmt), skipped slides:false}
-        on error errMsg number errNum
+        try await run(.keynote, opening: input) { doc in
+            """
+            set d to \(doc)
+            try
+                export d to (POSIX file \(q(folder.path))) as slide images with properties {image format:\(fmt), skipped slides:false}
+            on error errMsg number errNum
+                close d saving no
+                error errMsg number errNum
+            end try
             close d saving no
-            error errMsg number errNum
-        end try
-        close d saving no
-        """)
+            """
+        }
+        // Keynote names the images after the (temporary) document; rename to the original name.
+        let base = input.deletingPathExtension().lastPathComponent
+        if let items = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
+            for item in items where item.lastPathComponent.hasPrefix("Marshmallow-") {
+                let rest = item.lastPathComponent.drop(while: { $0 != "." })
+                try? FileManager.default.moveItem(at: item, to: folder.appendingPathComponent(base + rest))
+            }
+        }
         return folder
     }
 
